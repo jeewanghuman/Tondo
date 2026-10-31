@@ -267,6 +267,17 @@
     ]
   },
   {
+    "src": "renders/glass/round_milk_types_800x800.png",
+    "out": "home-milk-list.png",
+    "size": [
+      800,
+      800
+    ],
+    "round": true,
+    "scale": 0.75,
+    "callouts": []
+  },
+  {
     "src": "renders/glass/round_home_scale_lowbatt_800x800.png",
     "out": "home-scale-battery.png",
     "size": [

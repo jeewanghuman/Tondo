@@ -131,12 +131,15 @@ bool render(core::IMachine& machine, core::IProvisioner& provisioner,
     app.pose_backup_result();  // no reboot handler in the sim: the notice stays
   }
   // Round glass: 1 = the brew temperature dial, 2 = the steam sheet, 3 = the
-  // Milk sheet after its Tare (the fake scale keeps the weight it was given).
+  // Milk sheet after its Tare (the fake scale keeps the weight it was given),
+  // 4 / 5 = that sheet with its drink / milk list open.
   if (round_sheet == 1) app.open_brew_dial();
   if (round_sheet == 2) app.open_steam_sheet();
-  if (round_sheet == 3) {
+  if (round_sheet >= 3 && round_sheet <= 5) {
     app.open_milk_sheet();
     app.milk_tare();
+    if (round_sheet == 4) app.milk_open_list(true);
+    if (round_sheet == 5) app.milk_open_list(false);
   }
   if (ready_alert) app.pose_ready_alert();  // the end-of-warm-up cover
   if (scale_battery) app.scale_battery_poll();  // a low scale battery's toast
@@ -295,6 +298,10 @@ int main() {
     scale.set_weight(176.0f);
     ok &= r(rd, "renders/round_milk_done_800x800.png", 0, -1, false, 0, -1, false, -1, 0,
             false, false, 0, false, false, false, false, 0, 3);
+    ok &= r(rd, "renders/round_milk_drinks_800x800.png", 0, -1, false, 0, -1, false, -1, 0,
+            false, false, 0, false, false, false, false, 0, 4);
+    ok &= r(rd, "renders/round_milk_types_800x800.png", 0, -1, false, 0, -1, false, -1, 0,
+            false, false, 0, false, false, false, false, 0, 5);
     scale.set_weight(36.4f);
     brew.set_wired_paddle(false);  // the mid-shot pose back-fills an unwired shot
     brew.set_phase(core::ShotPhase::kBrewing);

@@ -89,8 +89,9 @@ class App {
   // the steam pitcher for a drink -- its volume times the milk's density
   // (core/milk.h). Same layer and close path as the dial (dial_).
   void open_milk_sheet();
-  void milk_cycle_drink();          // tap the drink capsule
-  void milk_cycle_type();           // tap the milk capsule
+  void milk_open_list(bool drinks); // tap the drink / milk capsule: every choice
+  void milk_pick(int index);        // a row of that list
+  void milk_close_list();           // tap outside the list: no change
   void milk_step_ml(int dir);       // -/+ by core::kMilkMlStep (remembered per drink)
   void milk_tare();                 // the sheet's Tare
   // Round-glass Home: show its screen-level backdrop only while Home is the
@@ -343,6 +344,8 @@ class App {
   lv_obj_t* milk_drink_label_ = nullptr;
   lv_obj_t* milk_type_label_ = nullptr;
   lv_obj_t* milk_ml_label_ = nullptr;
+  lv_obj_t* milk_list_ = nullptr;      // the drink/milk list over the sheet, if open
+  bool milk_list_drinks_ = false;      // which list it is
   int milk_drink_ = 0;                 // core::kMilkDrinks index
   int milk_type_ = 0;                  // core::kMilkTypes index
   int milk_ml_ = 0;                    // that drink's amount, ml
@@ -354,6 +357,7 @@ class App {
   float milk_last_g_ = 0.0f;           // weight at the last movement
   uint32_t milk_moved_ms_ = 0;         // lv_tick of the last movement or tap
   void milk_refresh_labels();          // picks/amount/target text, then a redraw
+  int milk_ml_for(int drink) const;    // a drink's amount: remembered, else preset
   void milk_tick();                    // weight -> ring + numerals (each loop; cheap)
   void milk_poll();                    // refresh: close on a shot or when left idle
   // Log-viewer modal (live tail): refreshed from core::log_ring() by a timer

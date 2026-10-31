@@ -192,22 +192,29 @@ link or mid-shot) opens the Milk sheet: App::open_milk_sheet, on the dial's
 layer and root (`dial_`), so close_dial closes it. Drinks (preset ml of cold
 milk) and milks (g/ml) are APPEND-ONLY tables in `core/milk.h` (NVS-indexed:
 `milkdrk`, `milktyp`, one `milkml<d>` per drink, 0 = the preset; readers clamp
-an unknown index to the default). Target = ml x density; on target within
-max(3 %, 3 g). Opening calls `IBrewController::set_scale_borrowed(true)`: the
-unwired detector stays disarmed (a pour reads like a shot -- host-tested)
-and an armed/delayed/running auto-flush is cancelled (the pitcher sits under
-the group). close_dial returns the scale. So the sheet must not linger: it
-closes when a shot goes in flight (the paddle still runs one) and after 5
-minutes with no tap and no >= 2 g change (`milk_poll`, from refresh), and
-holds the idle screen off meanwhile. The ring/numerals follow the scale per
+an unknown index to the default). The drink/milk capsules open a FULL LIST
+(`milk_open_list`: an opaque veil on `dial_` + a glass card of rows, each
+with its ml / density, the current one bright; a tap outside closes it
+unchanged) -- tap-to-cycle hid what the choices were (owner, 2026-10-31);
+rows dispatch through `on_milk_pick<I>` (8 slots, static_assert). Target =
+ml x density; on target within max(3 %, 3 g). Opening calls
+`IBrewController::set_scale_borrowed(true)`: the unwired detector stays
+disarmed (a pour reads like a shot -- host-tested) and an armed/delayed/
+running auto-flush is cancelled (the pitcher sits under the group).
+close_dial returns the scale. So the sheet must not linger: it closes when
+a shot goes in flight (the paddle still runs one) and after 5 minutes with
+no tap and no >= 2 g change (`milk_poll`, from refresh), and holds the idle
+screen off meanwhile. The ring/numerals follow the scale per
 loop (`milk_tick` from pump_scale_chart, redrawing only on a new seq; arc
 colour written only on a tone change). The scale-battery toast waits while
 any sheet is up. Costs: four LVGL objects on Home (column, button, icon,
-caption); the sheet's ~20 objects exist only while open; the milk glyph in
-the three Lucide fonts (regenerated from the cached lucide-static 1.61.0; the
-other glyphs' bitmaps are unchanged, only the offsets after it move). Sim:
-`round_milk_800x800` / `round_milk_done_800x800` (round_sheet 3 = open +
-Tare, FakeScale::set_weight), manual shot `home-milk.png`.
+caption); the sheet's ~20 objects (+ ~15 for an open list) exist only while
+open; the milk glyph in the three Lucide fonts (regenerated from the cached
+lucide-static 1.61.0; the other glyphs' bitmaps are unchanged, only the
+offsets after it move). Sim: `round_milk_800x800` / `round_milk_done_800x800`
+(round_sheet 3 = open + Tare, FakeScale::set_weight), `round_milk_drinks_` /
+`round_milk_types_800x800` (4 / 5 = with a list open), manual shots
+`home-milk.png`, `home-milk-list.png`.
 
 ## Failed-allocation flight recorder (crash_record.*, 2026-09-12)
 

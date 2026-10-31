@@ -7,6 +7,12 @@ for someone reading the diff. These notes are also shown ON THE DEVICE, whose
 fonts are ASCII-only: stick to characters `sanitize_notes()` (src/ui/app.cpp)
 maps — plain ASCII plus `— – → … × ' "` — or they render as empty boxes.
 
+## Unreleased
+
+- **Milk lists.** On the Milk sheet, tapping the drink or the milk now opens
+  the full list to pick from, showing each drink's amount and each milk's
+  density, instead of stepping through them one at a time.
+
 ## v1.4.0
 
 - **Milk by weight.** A new Milk button on Home weighs the milk for a drink

@@ -220,14 +220,20 @@ the edge fills as you pour and turns **green** when you're on target (within
   then `Pour 42 g more`, `On target`, or `12 g over`.
 - ② **Weight** — the milk in the pitcher, live.
 - ③ **Target** — the weight to pour, and the density it was worked out with.
-- ④ **Drink** — tap to step through Cortado, Flat white, Cappuccino, Latte and
-  Large latte.
-- ⑤ **Milk** — tap to step through Whole, 2 %, Skim, Oat, Soy and Almond.
+- ④ **Drink** — tap for the list of drinks, each with its amount (Cortado,
+  Flat white, Cappuccino, Latte, Large latte), and pick one.
+- ⑤ **Milk** — tap for the list of milks, each with its density (Whole, 2 %,
+  Skim, Oat, Soy, Almond), and pick one. In either list the current choice
+  is lit; tapping outside the list closes it without a change.
 - ⑥ **Amount** — **−** / **+** change the drink's milk in steps of 10 ml
   (30–500 ml). Each drink remembers its own amount, and the sheet reopens
   on the drink and milk you used last.
 - ⑦ **Tare** — zeroes the scale with the pitcher on it.
 - ⑧ **Done** — closes the sheet.
+
+<p align="center">
+  <img src="docs/img/manual/home-milk-list.png" width="45%" alt="The milk list">
+</p>
 
 The amounts are cold milk before steaming, for a double shot; steaming
 roughly adds a fifth in volume for a latte and more for a cappuccino's foam.

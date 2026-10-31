@@ -4970,10 +4970,17 @@ void on_dial_set(lv_event_t* e) {
   static_cast<ui::App*>(lv_event_get_user_data(e))->dial_commit();
 }
 void on_milk_drink(lv_event_t* e) {
-  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_cycle_drink();
+  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_open_list(true);
 }
 void on_milk_type(lv_event_t* e) {
-  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_cycle_type();
+  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_open_list(false);
+}
+void on_milk_list_close(lv_event_t* e) {
+  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_close_list();
+}
+template <int I>
+void on_milk_pick(lv_event_t* e) {
+  static_cast<ui::App*>(lv_event_get_user_data(e))->milk_pick(I);
 }
 void on_milk_minus(lv_event_t* e) {
   static_cast<ui::App*>(lv_event_get_user_data(e))->milk_step_ml(-1);
@@ -5038,6 +5045,7 @@ void App::close_dial() {
   if (milk_arc_ != nullptr && brew_ != nullptr) brew_->set_scale_borrowed(false);
   milk_arc_ = milk_weight_ = milk_target_ = milk_status_ = nullptr;
   milk_drink_label_ = milk_type_label_ = milk_ml_label_ = nullptr;
+  milk_list_ = nullptr;  // a child of dial_: gone with it
   // Bring Home back (open_* hid it so the sheet reads cleanly).
   if (tabview_ != nullptr && modal_ == nullptr)
     lv_obj_remove_flag(tabview_, LV_OBJ_FLAG_HIDDEN);
@@ -5321,8 +5329,7 @@ void App::open_milk_sheet() {
   auto at = [d](int px) { return px * d / 800; };
   milk_drink_ = core::milk_drink_index(display_->milk_drink());
   milk_type_ = core::milk_type_index(display_->milk_type());
-  const int stored = display_->milk_ml(milk_drink_);
-  milk_ml_ = stored > 0 ? core::clamp_milk_ml(stored) : core::kMilkDrinks[milk_drink_].ml;
+  milk_ml_ = milk_ml_for(milk_drink_);
 
   lv_obj_t* bg = make_sheet_layer(screen_);
   dial_ = bg;
@@ -5367,7 +5374,7 @@ void App::open_milk_sheet() {
     lv_obj_align(r, LV_ALIGN_TOP_MID, 0, y);
     return r;
   };
-  // The drink and the milk: tap to step through each list.
+  // The drink and the milk: tap for the full list of each (milk_open_list).
   lv_obj_t* picks = row(at(382), at(14));
   lv_obj_t* drink = make_sheet_button(picks, at(214), at(56), ui::glass::Tone::kClear, "",
                                       ui::font_dp(20));
@@ -5409,9 +5416,11 @@ void App::open_milk_sheet() {
 void App::milk_refresh_labels() {
   if (milk_arc_ == nullptr) return;
   char t[48];
-  std::snprintf(t, sizeof(t), "%s  \u203A", core::kMilkDrinks[milk_drink_].name);
+  // The chevron says "opens a list" (LV_SYMBOL_DOWN, from the Montserrat
+  // fallback behind the round text font).
+  std::snprintf(t, sizeof(t), "%s  " LV_SYMBOL_DOWN, core::kMilkDrinks[milk_drink_].name);
   lv_label_set_text(milk_drink_label_, t);
-  std::snprintf(t, sizeof(t), "%s  \u203A", core::kMilkTypes[milk_type_].name);
+  std::snprintf(t, sizeof(t), "%s  " LV_SYMBOL_DOWN, core::kMilkTypes[milk_type_].name);
   lv_label_set_text(milk_type_label_, t);
   std::snprintf(t, sizeof(t), "%d ml", milk_ml_);
   lv_label_set_text(milk_ml_label_, t);
@@ -5491,22 +5500,91 @@ void App::milk_poll() {
   milk_tick();  // also catches a link that dropped without a new reading
 }
 
-void App::milk_cycle_drink() {
+int App::milk_ml_for(int drink) const {
+  const int stored = display_->milk_ml(drink);
+  return stored > 0 ? core::clamp_milk_ml(stored) : core::kMilkDrinks[drink].ml;
+}
+
+// The drink or milk capsule opens every choice at once, each with what it
+// means (a drink's amount, a milk's density), the current one lit: tapping
+// through them one at a time hid what the choices were (owner, 2026-10-31).
+// An opaque veil over the sheet -- the clear glass rows would show the sheet
+// through -- whose own tap (outside the card) closes it without a change.
+void App::milk_open_list(bool drinks) {
+  if (milk_arc_ == nullptr || dial_ == nullptr) return;
+  milk_close_list();
+  milk_moved_ms_ = lv_tick_get();
+  milk_list_drinks_ = drinks;
+  const int d = screen_.width < screen_.height ? screen_.width : screen_.height;
+  auto at = [d](int px) { return px * d / 800; };
+
+  lv_obj_t* veil = lv_obj_create(dial_);
+  lv_obj_remove_style_all(veil);
+  lv_obj_set_size(veil, lv_pct(100), lv_pct(100));
+  lv_obj_set_style_bg_color(veil, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(veil, LV_OPA_COVER, 0);
+  lv_obj_add_flag(veil, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_remove_flag(veil, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_event_cb(veil, on_milk_list_close, LV_EVENT_CLICKED, this);
+  milk_list_ = veil;
+
+  lv_obj_t* card = ui::glass::make_panel(veil, at(44), ui::glass::Tone::kClear);
+  lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE);  // a tap between rows isn't "outside"
+  lv_obj_set_size(card, at(460), LV_SIZE_CONTENT);
+  lv_obj_center(card);
+  lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_all(card, at(22), 0);
+  lv_obj_set_style_pad_row(card, at(10), 0);
+  lv_obj_t* title = make_sheet_label(card, ui::font_dp(24), LV_OPA_COVER);
+  lv_label_set_text(title, drinks ? "Drink" : "Milk");
+
+  static constexpr lv_event_cb_t kPick[] = {on_milk_pick<0>, on_milk_pick<1>,
+                                            on_milk_pick<2>, on_milk_pick<3>,
+                                            on_milk_pick<4>, on_milk_pick<5>,
+                                            on_milk_pick<6>, on_milk_pick<7>};
+  static_assert(core::kMilkDrinkCount <= 8 && core::kMilkTypeCount <= 8,
+                "one pick callback per row: add more to kPick");
+  const int n = drinks ? core::kMilkDrinkCount : core::kMilkTypeCount;
+  const int current = drinks ? milk_drink_ : milk_type_;
+  for (int i = 0; i < n; ++i) {
+    char t[48];
+    if (drinks) {
+      std::snprintf(t, sizeof(t), "%s  \u00B7  %d ml", core::kMilkDrinks[i].name,
+                    milk_ml_for(i));
+    } else {
+      std::snprintf(t, sizeof(t), "%s  \u00B7  %.3f g/ml", core::kMilkTypes[i].name,
+                    static_cast<double>(core::kMilkTypes[i].g_per_ml));
+    }
+    lv_obj_t* row = make_sheet_button(
+        card, at(400), at(54), i == current ? ui::glass::Tone::kBright : ui::glass::Tone::kClear,
+        t, ui::font_dp(20));
+    lv_obj_add_event_cb(row, kPick[i], LV_EVENT_CLICKED, this);
+  }
+}
+
+void App::milk_pick(int index) {
   if (milk_arc_ == nullptr) return;
   milk_moved_ms_ = lv_tick_get();
-  milk_drink_ = (milk_drink_ + 1) % core::kMilkDrinkCount;
-  display_->set_milk_drink(milk_drink_);
-  const int stored = display_->milk_ml(milk_drink_);
-  milk_ml_ = stored > 0 ? core::clamp_milk_ml(stored) : core::kMilkDrinks[milk_drink_].ml;
+  if (milk_list_drinks_) {
+    milk_drink_ = core::milk_drink_index(index);
+    display_->set_milk_drink(milk_drink_);
+    milk_ml_ = milk_ml_for(milk_drink_);
+  } else {
+    milk_type_ = core::milk_type_index(index);
+    display_->set_milk_type(milk_type_);
+  }
+  milk_close_list();
   milk_refresh_labels();
 }
 
-void App::milk_cycle_type() {
-  if (milk_arc_ == nullptr) return;
+void App::milk_close_list() {
+  if (milk_list_ == nullptr) return;
   milk_moved_ms_ = lv_tick_get();
-  milk_type_ = (milk_type_ + 1) % core::kMilkTypeCount;
-  display_->set_milk_type(milk_type_);
-  milk_refresh_labels();
+  // Async: called from a row (or the veil) inside the list, mid-event.
+  lv_obj_delete_async(milk_list_);
+  milk_list_ = nullptr;
 }
 
 void App::milk_step_ml(int dir) {
