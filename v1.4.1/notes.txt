@@ -1,0 +1,5 @@
+
+- **Milk lists.** On the Milk sheet, tapping the drink or the milk now opens
+  the full list to pick from, showing each drink's amount and each milk's
+  density, instead of stepping through them one at a time.
+
