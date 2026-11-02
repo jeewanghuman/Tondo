@@ -728,6 +728,9 @@ void on_saver_anim_timer(lv_timer_t* t) {
 void on_wifi_setup_clicked(lv_event_t* e) {
   static_cast<ui::App*>(lv_event_get_user_data(e))->start_wifi_setup();
 }
+void on_web_pin_clicked(lv_event_t* e) {
+  static_cast<ui::App*>(lv_event_get_user_data(e))->new_web_pin();
+}
 void on_wifi_forget_clicked(lv_event_t* e) {
   static_cast<ui::App*>(lv_event_get_user_data(e))->forget_wifi();
 }
@@ -1439,6 +1442,8 @@ void App::build(core::IMachine& machine, core::IProvisioner& provisioner,
   lv_obj_add_event_cb(settings_.wifi_switch, on_wifi_switch, LV_EVENT_VALUE_CHANGED, this);
   lv_obj_add_event_cb(settings_.wifi_setup_btn, on_wifi_setup_clicked, LV_EVENT_CLICKED, this);
   lv_obj_add_event_cb(settings_.wifi_forget_btn, on_wifi_forget_clicked, LV_EVENT_CLICKED, this);
+  if (settings_.web_pin_btn != nullptr)
+    lv_obj_add_event_cb(settings_.web_pin_btn, on_web_pin_clicked, LV_EVENT_CLICKED, this);
   lv_obj_add_event_cb(settings_.tz_dropdown, on_tz_dropdown, LV_EVENT_VALUE_CHANGED, this);
   lv_obj_add_event_cb(settings_.ntp_switch, on_ntp_switch, LV_EVENT_VALUE_CHANGED, this);
   if (settings_.update_check_btn != nullptr)
@@ -1637,6 +1642,7 @@ void App::refresh() {
   scale_battery_poll();  // ...and a scale battery that has run low
   link_sounds_poll();    // ...and the scale or the machine coming and going
   milk_poll();           // the Milk sheet closes itself on a shot or when left
+  remote_poll();         // the phone page: apply what it posted, publish state
   // Round glass: keep rows built after the tab (scan results, history list,
   // modal content) glassy. Last, so rows this tick's updates just added are
   // converted before they are ever drawn opaque. Cheap: only still-opaque
@@ -1901,6 +1907,297 @@ void App::play_cue(core::Cue cue, int scale_pct) {
 
 // Link edges, heard: the scale coming and going, and the machine's link
 // dropping. The first look only learns the state (a boot is not an event).
+// --- phone page (core::RemoteBridge) ---------------------------------------
+// The web server (its own task on the P4) never calls into App; it reads the
+// snapshot published here and posts commands that refresh() applies through
+// the same paths as the touch controls. Nothing here can start the group: the
+// command set has no shot, flush or backflush.
+
+void App::sync_switch(lv_obj_t* sw, bool on) {
+  if (sw == nullptr || on == lv_obj_has_state(sw, LV_STATE_CHECKED)) return;
+  // Programmatic: fires no VALUE_CHANGED, so no loop back into the setter.
+  if (on) lv_obj_add_state(sw, LV_STATE_CHECKED);
+  else lv_obj_remove_state(sw, LV_STATE_CHECKED);
+}
+
+void App::new_web_pin() {
+  if (network_ == nullptr) return;
+  network_->new_web_pin();
+  update_settings_view();
+}
+
+void App::remote_poll() {
+  if (remote_ == nullptr) return;
+  core::RemoteCmd c;
+  for (int i = 0; i < core::RemoteBridge::kQueueDepth && remote_->take(&c); ++i)
+    remote_apply(c);
+  remote_publish();
+}
+
+void App::remote_feed(const core::BrewSnapshot& b, const core::ScaleSnapshot& s) {
+  if (remote_ == nullptr) return;
+  const bool collecting =
+      b.phase == core::ShotPhase::kBrewing || b.phase == core::ShotPhase::kSettling;
+  if (collecting && !remote_in_shot_) remote_->shot_begin();
+  remote_in_shot_ = collecting;
+  // Same gates as the Home plot: nothing before the baseline is confirmed
+  // (the tare window's readings are garbage), shot grams for unwired shots.
+  if (!collecting || !s.connected) return;
+  if (b.phase == core::ShotPhase::kBrewing && !b.baseline_set) return;
+  const float g = s.weight_g - (core::unwired_net_weight(b) ? b.start_weight_g : 0.0f);
+  remote_->shot_sample(b.shot_ms, g);
+  remote_last_g_ = g;
+}
+
+void App::remote_publish() {
+  core::RemoteLive l;
+  if (machine_ != nullptr) {
+    const core::MachineSnapshot m = machine_->snapshot();
+    l.link = m.link;
+    l.on = m.power == core::Power::On;
+    l.brewing = m.brewing;
+    l.brew_c = m.brew_temp_c;
+    l.steam_c = m.boiler_temp_c;
+    // While an edit is in flight show the value being sent (as the screen
+    // does), so the phone doesn't flick back during the round trip.
+    l.brew_set = settings_.brew_dirty ? settings_.brew_target : m.brew_target_c;
+    l.steam_on = settings_.steam_enable_dirty ? settings_.steam_enabled : m.steam_enabled;
+    l.steam_level = settings_.boiler_level;
+    l.steam_set = settings_.boiler_dirty ? core::kSteamLevelsC[settings_.boiler_level]
+                                         : m.boiler_target_c;
+  }
+  l.heating = heating_;
+  if (scale_ != nullptr) {
+    const core::ScaleSnapshot sc = scale_->snapshot();
+    l.scale_connected = sc.connected;
+    l.weight_g = sc.weight_g;
+    l.scale_batt = sc.connected && sc.battery_valid ? sc.battery_pct : -1;
+  }
+  l.scale_paired = scale_provisioner_ != nullptr && !scale_provisioner_->saved_name().empty();
+  if (brew_ != nullptr) {
+    const core::BrewSnapshot b = brew_->snapshot();
+    l.phase = b.phase;
+    l.mode = b.mode;
+    l.shot_ms = b.shot_ms;
+    l.target_g = b.target_weight_g;
+    l.shot_g = b.phase == core::ShotPhase::kIdle ? 0.0f : remote_last_g_;
+  }
+  if (updates_ != nullptr) {
+    const core::UpdateInfo u = updates_->info();
+    l.update_available = u.available;
+    l.update_checking = updates_->checking();
+    l.update_check_ok = updates_->last_check_ok();
+    l.update_check_seq = updates_->check_seq();
+    std::snprintf(l.update_version, sizeof(l.update_version), "%s", u.version.c_str());
+    if (u.version != remote_notes_version_) {  // the notes only change with it
+      remote_notes_version_ = u.version;
+      remote_->set_update_notes(u.notes);
+    }
+  }
+  l.can_dim = display_ != nullptr && display_->supports_brightness();
+  l.has_sound = sound_ != nullptr && sound_->available();
+  using RS = core::RemoteSetting;
+  auto set = [&l](RS k, float v) { l.settings[static_cast<int>(k)] = v; };
+  set(RS::kBrightness, static_cast<float>(settings_.brightness));
+  set(RS::kScreenTimeout, static_cast<float>(settings_.screen_timeout_min));
+  set(RS::kIdleScreen, static_cast<float>(settings_.screensaver_style));
+  set(RS::kFahrenheit, display_ != nullptr && display_->use_fahrenheit() ? 1.0f : 0.0f);
+  set(RS::kClock24h, clock_ != nullptr && clock_->use_24h() ? 1.0f : 0.0f);
+  set(RS::kClickSound, click_sound_on_ ? 1.0f : 0.0f);
+  set(RS::kShotSounds, shot_sounds_on_ ? 1.0f : 0.0f);
+  set(RS::kMilkSounds, milk_sounds_on_ ? 1.0f : 0.0f);
+  set(RS::kAlertSounds, alert_sounds_on_ ? 1.0f : 0.0f);
+  set(RS::kChimeVolume, static_cast<float>(ready_chime_vol_));
+  set(RS::kChimeMelody, static_cast<float>(ready_chime_mel_));
+  set(RS::kTargetG, settings_.target_g);
+  if (brew_ != nullptr) {
+    const core::BrewSnapshot b = brew_->snapshot();
+    set(RS::kAutoFlush, static_cast<float>(b.flush_s));
+    set(RS::kFlushDelay, static_cast<float>(b.flush_delay_s));
+  }
+  set(RS::kReviewHold, static_cast<float>(settings_.review_hold_s));
+  if (updates_ != nullptr) {
+    set(RS::kUpdateCadence, static_cast<float>(updates_->check_cadence()));
+    set(RS::kBetaUpdates, updates_->beta_channel() ? 1.0f : 0.0f);
+  }
+  remote_->publish(l);
+}
+
+void App::remote_apply(const core::RemoteCmd& c) {
+  using K = core::RemoteCmdKind;
+  const bool connected =
+      machine_ != nullptr && machine_->snapshot().link == core::Link::Connected;
+  const bool f = display_ != nullptr && display_->use_fahrenheit();
+  switch (c.kind) {
+    case K::kPower: {
+      if (!connected) return;
+      const core::Power prev = machine_->snapshot().power;
+      const bool want = c.value != 0.0f;
+      if (want == (prev == core::Power::On)) return;
+      machine_->set_power(want);
+      // The Home button's "Working..." state, exactly as a tap sets it.
+      home_.power_pending_from = prev;
+      home_.power_pending_until = lv_tick_get() + 8000;
+      return;
+    }
+    case K::kBrewTemp: {
+      if (!connected) return;
+      const float v = std::round(c.value * 10.0f) / 10.0f;
+      settings_.brew_target = clampf(v, core::kBrewTargetMinC, core::kBrewTargetMaxC);
+      settings_.brew_dirty = true;
+      set_brew_label(settings_, true, f);
+      set_temp_controls_enabled(settings_, true);
+      sync_home_setpoints(true);
+      machine_->set_brew_target(settings_.brew_target);
+      return;
+    }
+    case K::kSteamEnabled:
+      if (connected) steam_set_enabled(c.value != 0.0f);
+      return;
+    case K::kSteamLevel: {
+      if (!connected) return;
+      const int lvl = static_cast<int>(std::lround(c.value));
+      boiler_adjust(lvl - settings_.boiler_level);  // clamps to 0..2
+      return;
+    }
+    case K::kSetting:
+      remote_apply_setting(c.setting, c.value);
+      update_settings_view();
+      return;
+    case K::kCheckUpdate:
+      if (updates_ != nullptr && network_ != nullptr &&
+          network_->status() == core::NetState::Connected)
+        updates_->request_check();  // a found update gets the usual notice
+      return;
+    case K::kInstall:
+      if (updates_ != nullptr && updates_->info().available) request_install();
+      return;
+    case K::kReboot: {
+      // The phone has already written the restored settings into NVS.
+      lv_obj_t* card = open_modal("Settings restored",
+                                  "Settings came in from the phone. Tondo is restarting.");
+      (void)card;
+      if (reboot_timer_ == nullptr) {
+        reboot_timer_ = lv_timer_create(on_restore_hold_done, 1500, this);
+        lv_timer_set_repeat_count(reboot_timer_, 1);
+      }
+      return;
+    }
+  }
+}
+
+void App::remote_apply_setting(core::RemoteSetting s, float value) {
+  using RS = core::RemoteSetting;
+  const int v = static_cast<int>(std::lround(value));
+  const bool on = value != 0.0f;
+  switch (s) {
+    case RS::kBrightness: {
+      if (display_ == nullptr || !display_->supports_brightness()) return;
+      int b = (v + 5) / 10 * 10;
+      b = b < 10 ? 10 : (b > 100 ? 100 : b);
+      settings_.brightness = b;
+      set_brightness_label(settings_);
+      display_->set_brightness(b);
+      return;
+    }
+    case RS::kScreenTimeout: {
+      if (display_ == nullptr) return;
+      bool known = false;
+      for (int m : kDimMinutes) known = known || m == v;
+      if (!known) return;
+      settings_.screen_timeout_min = v;
+      display_->set_screen_timeout_min(v);
+      set_dim_label(settings_);
+      sync_saver_row(settings_);
+      return;
+    }
+    case RS::kIdleScreen: {
+      if (display_ == nullptr || v < 0 || v >= kSaverCount) return;
+      if (v == core::IDisplaySettings::kSaverClock && !ui::is_round(screen_)) return;
+      settings_.screensaver_style = v;
+      display_->set_screensaver_style(v);
+      sync_saver_row(settings_);
+      return;
+    }
+    case RS::kFahrenheit:
+      sync_switch(settings_.units_switch, on);
+      set_use_fahrenheit(on);
+      return;
+    case RS::kClock24h:
+      sync_switch(settings_.clock_mode_switch, on);
+      set_clock_24h(on);
+      return;
+    case RS::kClickSound:
+      sync_switch(settings_.click_sound_switch, on);
+      set_click_sound(on);
+      return;
+    case RS::kShotSounds:
+      sync_switch(settings_.shot_sounds_switch, on);
+      set_shot_sounds(on);
+      return;
+    case RS::kMilkSounds:
+      sync_switch(settings_.milk_sounds_switch, on);
+      set_milk_sounds(on);
+      return;
+    case RS::kAlertSounds:
+      sync_switch(settings_.alert_sounds_switch, on);
+      set_alert_sounds(on);
+      return;
+    case RS::kChimeVolume:
+      set_ready_chime_vol(v, /*audition=*/false);
+      return;
+    case RS::kChimeMelody: {
+      if (!(v == core::kReadyMelodyRandom || (v >= 0 && v <= core::ready_melody_count())))
+        return;
+      ready_chime_mel_ = v;
+      if (display_ != nullptr) display_->set_ready_chime_melody(v);
+      set_chime_mel_label(settings_, v);
+      return;
+    }
+    case RS::kTargetG:
+      settings_.target_g = clampf(std::round(value), 5.0f, 120.0f);
+      target_adjust(0);  // labels + the controller, as a tap would
+      return;
+    case RS::kAutoFlush: {
+      if (brew_ == nullptr) return;
+      bool known = false;
+      for (int x : kFlushChoices) known = known || x == v;
+      if (!known) return;
+      brew_->set_flush_s(v);
+      set_flush_label(settings_, v);
+      return;
+    }
+    case RS::kFlushDelay: {
+      if (brew_ == nullptr) return;
+      bool known = false;
+      for (int x : kFlushDelayChoices) known = known || x == v;
+      if (!known) return;
+      brew_->set_flush_delay_s(v);
+      set_flush_delay_label(settings_, v);
+      return;
+    }
+    case RS::kReviewHold:
+      settings_.review_hold_s = (v + 2) / 5 * 5;
+      review_hold_adjust(0);  // clamps to 5..120, labels, the controller
+      return;
+    case RS::kUpdateCadence: {
+      if (updates_ == nullptr || v < 0 || v > 3) return;
+      updates_->set_check_cadence(v);
+      static const char* kCadence[] = {"Off", "On boot", "Daily", "Hourly"};
+      if (settings_.update_check_value != nullptr)
+        lv_label_set_text(settings_.update_check_value, kCadence[v]);
+      sync_beta_row();
+      return;
+    }
+    case RS::kBetaUpdates:
+      sync_switch(settings_.beta_switch, on);
+      set_beta_updates(on);
+      return;
+    case RS::kCount:
+      return;
+  }
+}
+
 void App::link_sounds_poll() {
   if (scale_ != nullptr) {
     const bool up = scale_->snapshot().connected;
@@ -3310,6 +3607,8 @@ void App::pump_scale_chart() {
       play_cue(core::Cue::ShotNear);
     }
   }
+
+  if (have_brew) remote_feed(bsnap, snap);  // the phone's live shot graph
 
   // Shot timer: continuous (ms) value, so redraw on a fixed ~10 Hz cadence that
   // matches its 0.1 s display resolution — faster would render invisible changes.
@@ -4763,6 +5062,17 @@ void App::update_settings_view() {
     }
     ui::set_text(settings_.wifi_status, buf);
     ui::set_text_color(settings_.wifi_status, color);
+
+    // The phone page: reachable at <name>.local while WiFi is connected.
+    if (settings_.web_address != nullptr) {
+      const bool up = network_->status() == core::NetState::Connected;
+      if (up) std::snprintf(buf, sizeof(buf), "%s.local", network_->web_name());
+      else std::snprintf(buf, sizeof(buf), "Needs WiFi");
+      ui::set_text(settings_.web_address, buf);
+      ui::set_text_color(settings_.web_address,
+                         up ? ui::theme::text() : ui::theme::muted());
+      ui::set_text(settings_.web_pin, network_->web_pin()[0] ? network_->web_pin() : "----");
+    }
   }
 
   // Backup page: say what is actually on the card, and grey Restore when there

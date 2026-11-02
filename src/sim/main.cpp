@@ -4,6 +4,7 @@
 // This file is the host counterpart of src/device/main.cpp: both wire a
 // concrete platform (here: FakeMachine + PngDisplay) to the portable UI.
 
+#include "core/remote.h"
 #include <cstdio>
 #include "lvgl.h"
 #include "src/core/lv_obj_draw_private.h"  // lv_obj_get_ext_draw_size (saver check)
@@ -210,6 +211,39 @@ int main() {
     return done;
   };
   bool ok = true;
+  // Phone page mailbox (core::RemoteBridge): a refresh applies what the web
+  // side posted, through the touch paths, and publishes the live snapshot.
+  // No render -- just the round trip, with the state put back afterwards.
+  {
+    battery.set_hw(false);
+    host::PngDisplay display(rd.width, rd.height);
+    static host::FakeSound snd;
+    static core::RemoteBridge bridge;
+    ui::App app;
+    app.build(machine, provisioner, battery, disp, clock, history, scale,
+              scale_provisioner, brew, network, snd, shots, rd, &updates, &backup);
+    app.set_remote(&bridge);
+    const int vol0 = disp.ready_chime_volume();
+    core::RemoteCmd c;
+    c.kind = core::RemoteCmdKind::kSetting;
+    c.setting = core::RemoteSetting::kChimeVolume;
+    c.value = 40;
+    bridge.post(c);
+    app.refresh();
+    const core::RemoteLive l = bridge.live();
+    const int vi = static_cast<int>(core::RemoteSetting::kChimeVolume);
+    const bool good = l.seq > 0 && disp.ready_chime_volume() == 40 &&
+                      l.settings[vi] == 40.0f &&
+                      l.brew_c == machine.snapshot().brew_temp_c;
+    disp.set_ready_chime_volume(vol0);
+    battery.set_hw(true);
+    if (good) {
+      std::printf("remote bridge round trip ok\n");
+    } else {
+      std::fprintf(stderr, "error: remote bridge round trip failed\n");
+      ok = false;
+    }
+  }
   ok &= r({800, 480}, "renders/home_800x480.png");
   ok &= r({320, 240}, "renders/home_320x240.png");
   // Round glass (the 3.4C, 800x800): every tab in the content band, tabs in a

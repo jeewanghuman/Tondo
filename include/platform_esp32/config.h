@@ -142,6 +142,14 @@ class Config {
   void set_ntp_server(const std::string& host);
   bool ntp_enabled() const;        // sync time from NTP when connected (default true)
   void set_ntp_enabled(bool on);
+
+  // The phone page: its mDNS host name ("tondo" -> http://tondo.local; key
+  // "webname") and the PIN that unlocks changes from the phone ("webpin",
+  // 4 digits, made on first use; a PER-UNIT key, never in a backup).
+  std::string web_name() const;            // "tondo" when unset
+  void set_web_name(const std::string& name);
+  std::string web_pin() const;             // "" until one is made
+  void set_web_pin(const std::string& pin);
 };
 
 }  // namespace platform

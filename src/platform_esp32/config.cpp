@@ -99,6 +99,8 @@ constexpr char kWifiPassKey[] = "wifipass";
 constexpr char kTzKey[] = "tz";
 constexpr char kNtpKey[] = "ntp";
 constexpr char kNtpEnKey[] = "ntp_en";
+constexpr char kWebNameKey[] = "webname";
+constexpr char kWebPinKey[] = "webpin";
 }  // namespace
 
 namespace platform {
@@ -446,6 +448,27 @@ void Config::set_screen_timeout_min(int minutes) {
   Preferences p;
   p.begin(kNamespace, /*readOnly=*/false);
   p.putInt(kScreenTimeoutKey, minutes);
+  p.end();
+}
+
+std::string Config::web_name() const {
+  const std::string n = read_key(kWebNameKey);
+  return n.empty() ? "tondo" : n;
+}
+
+void Config::set_web_name(const std::string& name) {
+  Preferences p;
+  p.begin(kNamespace, /*readOnly=*/false);
+  p.putString(kWebNameKey, name.c_str());
+  p.end();
+}
+
+std::string Config::web_pin() const { return read_key(kWebPinKey); }
+
+void Config::set_web_pin(const std::string& pin) {
+  Preferences p;
+  p.begin(kNamespace, /*readOnly=*/false);
+  p.putString(kWebPinKey, pin.c_str());
   p.end();
 }
 

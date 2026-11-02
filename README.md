@@ -57,7 +57,13 @@ here; the screens are new.
 - **Warm‑up chime** — the built‑in speaker plays a tune when the machine is
   ready, so you can start it and walk away.
 - **Shot history** — every shot is saved to a microSD card as CSV, browsable on
-  the device's Stats tab or from a phone via the device's own web page.
+  the device's Stats tab.
+- **Phone page at `http://tondo.local`** — Tondo serves its own web page on
+  your WiFi: the machine live (power, brew and steam temperature, the running
+  shot's graph), the shot history with notes, ratings, comparisons and
+  exports, trends over the weeks, settings, updates and backups. Changes need
+  a PIN shown on the device, and it never starts a shot. Add it to your home
+  screen to open it like an app.
 - **Settings backup** — preferences copy to the same card and restore onto
   replacement hardware.
 - **Over‑the‑air updates** — the device checks this fork's releases for new
@@ -284,7 +290,8 @@ src/ui/              The LVGL user interface. Depends ONLY on core/ interfaces,
 
 src/platform_esp32/  Device implementations of the core ports: the NimBLE GATT
                      transport, NVS config, display/touch drivers, Wi-Fi
-                     station + NTP, the setup-portal web server.
+                     station + NTP + mDNS (tondo.local), the one web server
+                     (setup portal and the phone page's API).
 
 src/platform_host/   "Fake" implementations that feed canned data, so the UI can
                      be built and rendered on a host with no hardware.
@@ -322,7 +329,7 @@ the same change** so the README and manual stay accurate.
 ### Prerequisites
 
 **PlatformIO** (`pip install platformio`) builds everything, and **node** (any
-recent LTS — `brew install node`) builds the shot-history web page the device
+recent LTS — `brew install node`) builds the phone page (tools/webapp) the device
 serves. That page is embedded in the firmware as a generated header,
 `include/platform_esp32/webapp_dist.h`, which is **not committed**: every
 `make build`/`make flash` target rebuilds it when anything under

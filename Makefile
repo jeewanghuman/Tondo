@@ -50,7 +50,7 @@ BOARD ?=
 # Building it needs node (see README "Developer documentation"); `make sim`
 # does not — the simulator has no web server.
 WEBAPP_HDR := include/platform_esp32/webapp_dist.h
-WEBAPP_SRC := $(wildcard tools/webapp/src/*) \
+WEBAPP_SRC := $(wildcard tools/webapp/src/*) $(wildcard tools/webapp/public/*) \
               tools/webapp/index.html tools/webapp/vite.config.js \
               tools/webapp/package.json tools/webapp/package-lock.json \
               tools/webapp/build.sh tools/webapp/gen_header.py

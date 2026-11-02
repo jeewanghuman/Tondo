@@ -11,6 +11,8 @@
 //
 //   /Tondo/shots.csv          index, one row per shot (kShotIndexHeader)
 //   /Tondo/shots/NNNNNN.csv   per-shot samples (kShotSamplesHeader)
+//   /Tondo/notes.csv          the owner's notes per shot (kShotNotesHeader;
+//                             only shots that have one; quoted CSV fields)
 //
 // Everything is plain CSV so the card can be pulled and analyzed on any
 // computer. The index's iso8601 column is LOCAL time (what the user saw);
@@ -38,6 +40,7 @@ constexpr const char* kLegacyShotDirName = "Apollo2";
 constexpr const char* kShotIndexHeader =
     "id,iso8601_local,unix,duration_ms,target_g,final_g,avg_gps,mode,wired\n";
 constexpr const char* kShotSamplesHeader = "t_ms,weight_g,flow_gps\n";
+constexpr const char* kShotNotesHeader = "id,rating,bean,note\n";
 
 inline const char* shot_mode_name(ShotMode m) {
   switch (m) {
@@ -102,6 +105,73 @@ inline bool parse_shot_sample_row(const char* line, ShotSample& out) {
   out.weight_g = static_cast<float>(w);
   out.flow_gps = static_cast<float>(f);
   return true;
+}
+
+// One notes row: id,rating,"bean","note". Text fields are always quoted,
+// with a quote written twice (RFC 4180), so a spreadsheet opens the file as
+// is. Returns chars written, or -1 if `n` is too small for the row.
+inline int format_shot_note_row(char* buf, size_t n, const ShotNote& note) {
+  int w = std::snprintf(buf, n, "%lu,%d,", static_cast<unsigned long>(note.id),
+                        note.rating);
+  if (w < 0 || static_cast<size_t>(w) >= n) return -1;
+  size_t at = static_cast<size_t>(w);
+  for (const char* field : {note.bean, note.text}) {
+    if (at + 1 >= n) return -1;
+    buf[at++] = '"';
+    for (const char* p = field; *p != '\0'; ++p) {
+      if (*p == '\n' || *p == '\r') continue;  // single-line by contract
+      if (at + 3 >= n) return -1;
+      if (*p == '"') buf[at++] = '"';
+      buf[at++] = *p;
+    }
+    if (at + 2 >= n) return -1;
+    buf[at++] = '"';
+    buf[at++] = field == note.bean ? ',' : '\n';
+  }
+  buf[at] = '\0';
+  return static_cast<int>(at);
+}
+
+// Parse one notes row. False on a header or malformed row. A field is either
+// quoted (quotes doubled inside) or bare up to the next comma; overlong text
+// is cut at the field's capacity.
+inline bool parse_shot_note_row(const char* line, ShotNote& out) {
+  unsigned long id = 0;
+  int rating = 0, used = 0;
+  if (std::sscanf(line, "%lu,%d,%n", &id, &rating, &used) < 2 || used == 0)
+    return false;
+  out = ShotNote{};
+  out.id = static_cast<uint32_t>(id);
+  out.rating = rating < 0 ? 0 : (rating > 5 ? 5 : rating);
+  const char* p = line + used;
+  char* fields[2] = {out.bean, out.text};
+  const size_t caps[2] = {sizeof(out.bean), sizeof(out.text)};
+  for (int f = 0; f < 2; ++f) {
+    size_t w = 0;
+    if (*p == '"') {
+      ++p;
+      while (*p != '\0') {
+        if (*p == '"') {
+          if (p[1] == '"') ++p;  // doubled quote = a literal one
+          else { ++p; break; }
+        }
+        if (*p == '\n' || *p == '\r') { ++p; continue; }
+        if (w + 1 < caps[f]) fields[f][w++] = *p;
+        ++p;
+      }
+    } else {
+      while (*p != '\0' && *p != ',' && *p != '\n' && *p != '\r') {
+        if (w + 1 < caps[f]) fields[f][w++] = *p;
+        ++p;
+      }
+    }
+    fields[f][w] = '\0';
+    if (f == 0) {
+      if (*p != ',') return out.id != 0;  // no note column: bean only
+      ++p;
+    }
+  }
+  return out.id != 0;
 }
 
 }  // namespace core

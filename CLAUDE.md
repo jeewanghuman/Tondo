@@ -237,6 +237,46 @@ learns the state); battery low with its toast; BackflushDone on the
 kBackflushDone transition; CleanLockEnding at 3, 2, 1. Costs: note tables
 in flash, three LVGL rows on the Sound page; no buffers, tasks or timers.
 
+## Phone page: tondo.local (2026-11-02)
+
+The web server (web_ui.cpp, its own task on the P4) serves a 4-tab React
+page (tools/webapp: Live / History / Trends / Settings) at
+`http://<webname>.local` -- Network::start_mdns on the first connect (ESPmDNS;
+renames go through `mdns_hostname_set`, thread-safe). Routes + threading:
+the header comment in web_ui.h.
+
+- MAILBOX, NOT CALLS. The web task never touches App/LVGL/BrewController.
+  `core::RemoteBridge` (core/remote.h, host-tested): App::remote_poll (end of
+  refresh) applies posted `RemoteCmd`s through the touch paths
+  (brew/steam/power/settings -> the same labels, switches, NVS) and publishes
+  a flat `RemoteLive`; App::remote_feed (pump_scale_chart) appends the
+  running shot's grams, thinned to 100 ms. Never re-enter refresh() from
+  remote_apply.
+- NEVER A SHOT. There is no command kind for a shot, flush or backflush --
+  keep it that way (owner's requirement).
+- PIN: `webpin`, 4 digits made in Network::begin, shown + renewed on
+  Settings > Tondo > WiFi. Every POST (and the backup download) needs it
+  (`pin=`); 5 wrong -> 60 s lockout. A PER-UNIT key: config_backup's
+  is_unit_key + UnitKeys hold it, so it never enters a backup file. `webname`
+  (default "tondo") does travel.
+- NOTES: `IShotStore::note/set_note` -> ShotStore keeps annotated shots in
+  RAM and rewrites `/Tondo/notes.csv` (kShotNotesHeader, RFC 4180 quoting,
+  shot_csv.h) on the writer task (JobKind::kNotes); remove() drops the note
+  too. The index format is untouched. Unknown notes header -> read-only.
+- BACKUP over the page: config_backup's `_text` / `_restore_text` (the file
+  versions now wrap them); restore posts kReboot so App shows a notice and
+  restarts through reboot_handler_.
+- Header: gen_header.py embeds the page + the three icons in public/
+  (committed, drawn by gen_icons.py). /manifest.webmanifest is a string in
+  web_ui.cpp. No service worker (http only).
+- RAM (owner OK'd "RAM is fine", 2026-11-02): RemoteBridge ~7.6 KB static
+  (600 x 12 B samples + snapshot + 8 commands); WebUi gained 3.6 KB of row
+  scratch (members, off the 8 KB task stack); notes ~300 B per annotated
+  shot (vector, PSRAM once large); page bundle 169 KB gz in flash (was ~100).
+- The local `pio run` can't fetch tool-scons here (registry blocked); device
+  files were syntax-checked with the installed riscv g++ and the framework's
+  flags/ lists instead. CI builds the real image at release.
+
 ## Failed-allocation flight recorder (crash_record.*, 2026-09-12)
 
 Core dumps here hold task stacks only (CONFIG_ESP_COREDUMP_CAPTURE_DRAM is off

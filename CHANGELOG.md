@@ -13,6 +13,10 @@ maps — plain ASCII plus `— – → … × ' "` — or they render as empty b
   end of a shot, the milk sheet's approach, target and overpour, and alerts:
   steam ready, scale and machine connections, scale battery low, backflush
   done and the cleaning lock's countdown. Switch each group under Sound.
+- **Phone page at tondo.local.** Open http://tondo.local on your phone to see
+  the machine live, change power, temperatures and settings (with the PIN
+  shown under WiFi), rate and note shots, compare two, see trends, export,
+  update and back up. Add it to your home screen like an app.
 
 ## v1.4.1
 

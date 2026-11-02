@@ -1,10 +1,15 @@
 #include "platform_esp32/network.h"
 
 #include <Arduino.h>
+#include <ESPmDNS.h>
+#include <mdns.h>
 #include <WiFi.h>
+#include <esp_random.h>
 #include <esp_sntp.h>
 
+#include <cstdio>
 #include <cstdlib>  // setenv
+#include <cstring>
 #include <ctime>
 
 #include "core/system.h"
@@ -39,6 +44,16 @@ Network::Network(Config& config, Clock& clock, TokenSetup& token_setup)
     : config_(config), clock_(clock), token_setup_(token_setup) {}
 
 void Network::begin() {
+  // The phone page's name + PIN, cached for every task to read. The PIN is
+  // made here, once, so the web task and the UI can never race to make two.
+  const std::string name = config_.web_name();
+  std::snprintf(web_name_, sizeof(web_name_), "%s", name.c_str());
+  const std::string pin = config_.web_pin();
+  if (pin.size() == 4) {
+    std::snprintf(web_pin_, sizeof(web_pin_), "%s", pin.c_str());
+  } else {
+    new_web_pin();
+  }
   if (config_.wifi_enabled() && !config_.wifi_ssid().empty()) {
     start_station();
   } else {
@@ -88,6 +103,48 @@ void Network::on_connected() {
   from_portal_ = false;
   core::logf("Network: connected, IP=%s\n", ip_.c_str());
   if (config_.ntp_enabled()) start_ntp();
+  start_mdns();
+}
+
+// http://<name>.local. Once per boot: the mDNS service tracks the station
+// interface across later drops and reconnects on its own.
+void Network::start_mdns() {
+  if (mdns_started_) return;
+  if (!MDNS.begin(web_name_)) {
+    core::logf("Network: mDNS failed to start\n");
+    return;
+  }
+  MDNS.setInstanceName("Tondo");
+  MDNS.addService("http", "tcp", 80);
+  mdns_started_ = true;
+  core::logf("Network: http://%s.local\n", web_name_);
+}
+
+void Network::new_web_pin() {
+  // esp_random() is a true RNG while the radio is up and a good PRNG before;
+  // either is plenty for a LAN PIN with a lockout behind it.
+  char pin[8];
+  std::snprintf(pin, sizeof(pin), "%04u", static_cast<unsigned>(esp_random() % 10000u));
+  std::memcpy(web_pin_, pin, sizeof(web_pin_));
+  config_.set_web_pin(pin);
+}
+
+bool Network::set_web_name(const char* name) {
+  const size_t n = name != nullptr ? std::strlen(name) : 0;
+  if (n == 0 || n > kWebNameMax || name[0] == '-' || name[n - 1] == '-') return false;
+  char clean[kWebNameMax + 1];
+  for (size_t i = 0; i < n; ++i) {
+    char c = name[i];
+    if (c >= 'A' && c <= 'Z') c = static_cast<char>(c - 'A' + 'a');
+    if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-')) return false;
+    clean[i] = c;
+  }
+  clean[n] = '\0';
+  config_.set_web_name(clean);
+  std::memcpy(web_name_, clean, n + 1);
+  if (mdns_started_) mdns_hostname_set(clean);  // thread-safe: mdns queues it
+  core::logf("Network: renamed to http://%s.local\n", clean);
+  return true;
 }
 
 void Network::start_ntp() {

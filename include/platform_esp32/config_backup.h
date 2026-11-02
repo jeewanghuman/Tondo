@@ -5,9 +5,10 @@
 #include "core/settings_backup.h"
 
 // Settings backup file: the whole `micra` NVS namespace as plain text on the
-// SD card. These three functions do the NVS<->file work and nothing else — the
-// card is mounted, and these are called, by the shot store's writer task (the
-// one thing that owns the medium). Nothing here touches LVGL or blocks the UI.
+// SD card. These functions do the NVS<->file work and nothing else — the
+// card is mounted, and the file ones are called, by the shot store's writer
+// task (the one thing that owns the medium). The text ones serve the phone
+// page's download / upload. Nothing here touches LVGL or blocks the UI.
 //
 // FORMAT (v1), one header block then one line per key:
 //
@@ -48,5 +49,14 @@ bool settings_backup_read(const char* path, core::BackupInfo* out);
 // default — which is what makes restoring an older backup behave exactly like
 // upgrading into the defaults. Refuses a file written by newer firmware.
 bool settings_backup_restore(const char* path, int* out_count, std::string* err);
+
+// The same three over text instead of a file, for the phone page: the backup
+// as a download (_text) and a restore from an upload (_restore_text). _parse
+// reads the header like settings_backup_read. Safe from any task (NVS is).
+bool settings_backup_text(bool include_wifi, bool include_token, std::string* out,
+                          int* out_count, std::string* err);
+bool settings_backup_parse(const std::string& text, core::BackupInfo* out);
+bool settings_backup_restore_text(const std::string& text, int* out_count,
+                                  std::string* err);
 
 }  // namespace platform

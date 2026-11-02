@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 
 #include "core/battery.h"
 #include "core/brew.h"
@@ -11,6 +12,7 @@
 #include "core/machine.h"
 #include "core/network.h"
 #include "core/provisioner.h"
+#include "core/remote.h"
 #include "core/settings_backup.h"
 #include "core/update_check.h"
 #include "core/ready_chime.h"
@@ -211,6 +213,10 @@ class App {
   // heals an RGB panel in place and never reboots, which is right for the
   // "Restart display" row and wrong after a settings restore.
   void set_reboot_handler(std::function<void()> h) { reboot_handler_ = std::move(h); }
+  // The phone page's mailbox (core/remote.h): refresh() publishes the live
+  // snapshot into it and applies what the phone posted. Optional (sim: unset).
+  void set_remote(core::RemoteBridge* r) { remote_ = r; }
+  void new_web_pin();  // Settings > Tondo > WiFi: the PIN row's refresh button
   void reboot_device() { if (reboot_handler_) reboot_handler_(); }
   void start_clean_lock();  // Settings "Lock display for cleaning": 30 s touch lockout
   void clean_lock_tick();   // countdown update (from an lv_timer, 4 Hz)
@@ -503,6 +509,20 @@ class App {
   // them silent), `scale_pct` of it for the small ticks.
   void play_cue(core::Cue cue, int scale_pct = 100);
   void link_sounds_poll();             // refresh: scale/machine link edges
+  // Phone page (core::RemoteBridge). remote_poll runs from refresh(): apply
+  // every posted command, then publish. remote_feed runs per loop from
+  // pump_scale_chart: the running shot's samples. remote_apply never starts
+  // the group -- there is no command for it.
+  void remote_poll();
+  void remote_publish();
+  void remote_apply(const core::RemoteCmd& c);
+  void remote_apply_setting(core::RemoteSetting s, float v);
+  void remote_feed(const core::BrewSnapshot& b, const core::ScaleSnapshot& s);
+  static void sync_switch(lv_obj_t* sw, bool on);
+  core::RemoteBridge* remote_ = nullptr;
+  bool remote_in_shot_ = false;  // the series is collecting (kBrewing..kSettling)
+  float remote_last_g_ = 0.0f;   // the shot's latest grams, held through review
+  std::string remote_notes_version_;  // update notes last handed to the bridge
   bool scale_link_known_ = false, scale_link_was_ = false;
   bool machine_link_known_ = false, machine_link_was_ = false;
 

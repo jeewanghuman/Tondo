@@ -41,6 +41,21 @@ struct ShotRecord {
   ShotSample samples[kSampleCap];
 };
 
+// What the owner wrote about a shot (the web History page): a 1-5 rating
+// (0 = none), the beans, and a free note. Kept apart from the index, in
+// /Tondo/notes.csv (core/shot_csv.h), so the index format never changes and
+// a card from an older build simply has no notes. Single line: set_note()
+// turns line breaks into spaces.
+struct ShotNote {
+  static constexpr int kBeanCap = 48;   // bytes, with the terminator
+  static constexpr int kTextCap = 240;
+  uint32_t id = 0;
+  int rating = 0;
+  char bean[kBeanCap] = "";
+  char text[kTextCap] = "";
+  bool empty() const { return rating == 0 && bean[0] == '\0' && text[0] == '\0'; }
+};
+
 // Headline metrics for the History view. Accuracy = 100% minus the mean
 // absolute final-vs-target error, over targeted shots only (see stats()).
 struct ShotStats {
@@ -125,6 +140,13 @@ class IShotStore {
   // the removed shot simply stops counting. False if unknown or the store
   // can't take the deletion right now. Default: unsupported.
   virtual bool remove(uint32_t) { return false; }
+
+  // Shot notes (see ShotNote). note(): false when the shot has none.
+  // set_note(): replaces the shot's note; an empty() note deletes it. False
+  // if the shot is unknown or the store can't take it. Default: unsupported.
+  virtual bool note(uint32_t, ShotNote*) const { return false; }
+  virtual bool set_note(const ShotNote&) { return false; }
+  virtual bool supports_notes() const { return false; }
 
   // Headline metrics; `now_unix` anchors the 30-day window.
   virtual ShotStats stats(int64_t now_unix) const = 0;

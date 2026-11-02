@@ -508,6 +508,35 @@ void build_device_wifi_rows(lv_obj_t* page, const lv_font_t* text_font,
   lv_obj_set_style_text_font(fg, text_font, 0);
   lv_obj_center(fg);
 
+  // The phone page: its address (mDNS) and the PIN that unlocks changes from
+  // it. App fills both; the refresh button makes a new PIN.
+  lv_obj_t* rweb = make_setting_row(page, "Phone page", text_font);
+  out.web_address = lv_label_create(rweb);
+  lv_obj_set_style_text_color(out.web_address, lv_color_hex(ui::theme::muted()), 0);
+  lv_obj_set_style_text_font(out.web_address, text_font, 0);
+  lv_label_set_text(out.web_address, "");
+
+  lv_obj_t* rpin = make_setting_row(page, "Phone PIN", text_font);
+  lv_obj_t* pin_box = lv_obj_create(rpin);  // keeps PIN + button together at the end
+  lv_obj_remove_style_all(pin_box);
+  lv_obj_remove_flag(pin_box, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_set_size(pin_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+  lv_obj_set_flex_flow(pin_box, LV_FLEX_FLOW_ROW);
+  lv_obj_set_flex_align(pin_box, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_CENTER,
+                        LV_FLEX_ALIGN_CENTER);
+  lv_obj_set_style_pad_column(pin_box, ui::dp(12), 0);
+  out.web_pin = lv_label_create(pin_box);
+  lv_obj_set_style_text_color(out.web_pin, lv_color_hex(ui::theme::text()), 0);
+  lv_obj_set_style_text_font(out.web_pin, text_font, 0);
+  lv_label_set_text(out.web_pin, "----");
+  out.web_pin_btn = ui::make_button(pin_box);
+  lv_obj_set_size(out.web_pin_btn, btn_size, btn_size);
+  lv_obj_set_style_bg_color(out.web_pin_btn, lv_color_hex(ui::theme::card()), 0);
+  lv_obj_t* np = lv_label_create(out.web_pin_btn);
+  lv_label_set_text(np, LV_SYMBOL_REFRESH);
+  lv_obj_set_style_text_color(np, lv_color_hex(ui::theme::text()), 0);
+  lv_obj_center(np);
+
   lv_obj_t* rnt = make_setting_row(page, "Auto time (NTP)", text_font);
   out.ntp_switch = lv_switch_create(rnt);
   lv_obj_set_size(out.ntp_switch, btn_size + ui::dp(8), btn_size / 2 + ui::dp(6));

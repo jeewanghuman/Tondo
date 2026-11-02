@@ -59,6 +59,14 @@ class INetwork {
   // (best-effort, not persisted). For the Info page's honest "NTP synced" row.
   // Default -1 for sources without SNTP (the sim/fake).
   virtual int ntp_seconds_since_sync() const { return -1; }
+
+  // The phone page: its address is http://<web_name()>.local (mDNS, while the
+  // station is connected) and changes made from it need web_pin(), four digits
+  // made on first boot. Persisted. new_web_pin() replaces the PIN (Settings >
+  // Tondo > WiFi). Defaults: no web page (the sim/fake).
+  virtual const char* web_name() const { return ""; }
+  virtual const char* web_pin() const { return ""; }
+  virtual void new_web_pin() {}
 };
 
 }  // namespace core

@@ -47,6 +47,7 @@
 #include "platform_esp32/scale_provisioner.h"
 #include "platform_esp32/token_setup.h"
 #include "platform_esp32/touch.h"
+#include "core/remote.h"
 #include "platform_esp32/web_ui.h"
 #include "ui/app.h"
 #include "ui/theme.h"
@@ -85,6 +86,10 @@ platform::ShotStore g_shots;
 core::NullShotStore g_shots;
 #endif
 platform::WebUi g_web_ui;  // the ONE HTTP server (setup portal + history app)
+// Phone page <-> UI loop mailbox: the live snapshot, the running shot's
+// samples (600 x 12 B) and an 8-deep command queue -- ~7.6 KB of internal RAM,
+// owner-approved 2026-11-02 for the phone page.
+core::RemoteBridge g_remote;
 ui::App g_app;
 
 constexpr uint32_t kUiRefreshMs = 500;
@@ -394,6 +399,7 @@ void setup() {
   // AP sessions; on the home network it serves the shot-history app + API.
   // The theme callback reads the ACTIVE palette per request, so the web page
   // always matches whatever the screen is showing.
+  g_web_ui.set_remote(&g_remote, &g_network);
   g_web_ui.begin(g_token_setup, g_shots, g_clock, "Tondo", [] {
     return platform::WebTheme{
         ui::theme::bg(),   ui::theme::rail(),  ui::theme::card(),
@@ -444,6 +450,7 @@ void setup() {
   // "Install now" (update notice): stash the target version and reboot into the
   // early-boot install mode (see the top of setup()), which downloads + flashes
   // with a clean DMA pool. Installing never happens live in the app.
+  g_app.set_remote(&g_remote);  // publishes the live view, applies phone commands
   g_app.set_install_handler([](const std::string& version) {
     g_config.set_pending_install(version);
     core::logf("UpdateInstall: reboot into install mode for %s\n", version.c_str());

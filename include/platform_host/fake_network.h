@@ -33,10 +33,14 @@ class FakeNetwork : public core::INetwork {
   bool ntp_enabled() const override { return ntp_en_; }
   void set_ntp_enabled(bool on) override { ntp_en_ = on; }
   int ntp_seconds_since_sync() const override { return ntp_since_s_; }
+  const char* web_name() const override { return "tondo"; }
+  const char* web_pin() const override { return pin_; }
+  void new_web_pin() override { pin_[0] = pin_[0] == '9' ? '1' : static_cast<char>(pin_[0] + 1); }
   // Sim-only: pose an NTP sync (>= 0 = seconds since; -1 = none this session).
   void set_ntp_seconds_since_sync(int s) { ntp_since_s_ = s; }
 
  private:
+  char pin_[5] = "4821";
   bool enabled_ = true;
   bool ntp_en_ = true;
   int ntp_since_s_ = -1;  // never synced: the previews show the manual pickers

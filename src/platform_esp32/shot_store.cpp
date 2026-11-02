@@ -71,6 +71,11 @@ const char* settings_path() {
                 core::kShotDirName);
   return g_path;
 }
+const char* notes_path() {
+  std::snprintf(g_path, sizeof(g_path), "%s/%s/notes.csv", kMount,
+                core::kShotDirName);
+  return g_path;
+}
 const char* shot_file_path(uint32_t id, const char* ext) {
   std::snprintf(g_path, sizeof(g_path), "%s/%s/shots/%06lu.%s", kMount,
                 core::kShotDirName, static_cast<unsigned long>(id), ext);
@@ -432,17 +437,21 @@ bool ShotStore::try_mount() {
     std::fclose(m);
   }
 
+  std::vector<core::ShotNote> notes;
+  load_notes(notes);
+
   card_ = card;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   index_ = std::move(loaded);
+  notes_ = std::move(notes);
   next_id_ = max_id + 1;
   stats_since_ = since;
   xSemaphoreGive(mutex_);
   available_ = true;
   refresh_storage();
   refresh_backup_info();  // a card carrying a settings backup says so at once
-  core::logf("ShotStore: SD mounted, %d shots, next id %lu\n",
-             static_cast<int>(index_.size()),
+  core::logf("ShotStore: SD mounted, %d shots (%d with notes), next id %lu\n",
+             static_cast<int>(index_.size()), static_cast<int>(notes_.size()),
              static_cast<unsigned long>(next_id_));
   return true;
 }
@@ -462,6 +471,10 @@ void ShotStore::unmount() {
 }
 
 void ShotStore::write_job(SaveJob& job) {
+  if (job.kind == JobKind::kNotes) {
+    if (available_) write_notes();
+    return;
+  }
   if (job.kind != JobKind::kShot) {
     settings_job(job);
     return;
@@ -719,6 +732,14 @@ bool ShotStore::remove(uint32_t id) {
       break;
     }
   }
+  core::ShotNote removed_note;
+  for (size_t i = 0; found && i < notes_.size(); ++i) {
+    if (notes_[i].id == id) {  // the note goes with its shot (file: remove_files)
+      removed_note = notes_[i];
+      notes_.erase(notes_.begin() + static_cast<long>(i));
+      break;
+    }
+  }
   xSemaphoreGive(mutex_);
   if (!found) return false;
 
@@ -728,6 +749,7 @@ bool ShotStore::remove(uint32_t id) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     if (pos > index_.size()) pos = index_.size();  // saves may have shifted it
     index_.insert(index_.begin() + static_cast<long>(pos), removed);
+    if (removed_note.id != 0) notes_.push_back(removed_note);
     xSemaphoreGive(mutex_);
     core::logf("ShotStore: delete queue full, shot kept\n");
     return false;
@@ -773,6 +795,114 @@ void ShotStore::remove_files(uint32_t id) {
     return;
   }
   core::logf("ShotStore: deleted shot %lu\n", static_cast<unsigned long>(id));
+  write_notes();  // its note (if any) left the RAM list with it
+}
+
+// --- shot notes ---------------------------------------------------------------
+// The owner's rating / beans / note per shot, in /Tondo/notes.csv beside the
+// index (never in it: the index format is frozen by its header contract). The
+// whole list lives in RAM (only annotated shots have a row, ~300 B each); every
+// change rewrites the file from a snapshot, on the writer task like all SD IO.
+
+namespace {
+// Writer task only, so one static buffer serves both directions and keeps the
+// rows off the writer's 5 KB stack.
+char g_note_row[16 + core::ShotNote::kBeanCap * 2 + core::ShotNote::kTextCap * 2];
+}  // namespace
+
+void ShotStore::load_notes(std::vector<core::ShotNote>& out) {
+  notes_readonly_ = false;  // a fresh card starts writable
+  FILE* f = std::fopen(notes_path(), "r");
+  if (f == nullptr) return;  // no notes yet
+  if (std::fgets(g_note_row, sizeof(g_note_row), f) == nullptr ||
+      std::strcmp(g_note_row, core::kShotNotesHeader) != 0) {
+    std::fclose(f);  // unknown format: leave it alone, show no notes
+    core::logf("ShotStore: notes.csv has an unknown format, ignored\n");
+    notes_readonly_ = true;
+    return;
+  }
+  core::ShotNote n;
+  while (std::fgets(g_note_row, sizeof(g_note_row), f) != nullptr) {
+    if (core::parse_shot_note_row(g_note_row, n) && !n.empty()) out.push_back(n);
+  }
+  std::fclose(f);
+}
+
+void ShotStore::write_notes() {
+  if (notes_readonly_) return;  // never overwrite a format we couldn't read
+  std::vector<core::ShotNote> snap;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  snap = notes_;
+  xSemaphoreGive(mutex_);
+  if (snap.empty()) {
+    ::remove(notes_path());
+    return;
+  }
+  char tmp[64], final_path[64];
+  std::snprintf(tmp, sizeof(tmp), "%s.tmp", notes_path());
+  std::snprintf(final_path, sizeof(final_path), "%s", notes_path());
+  FILE* f = std::fopen(tmp, "w");
+  if (f == nullptr) {
+    unmount();
+    return;
+  }
+  std::fputs(core::kShotNotesHeader, f);
+  for (const core::ShotNote& n : snap) {
+    if (core::format_shot_note_row(g_note_row, sizeof(g_note_row), n) > 0)
+      std::fputs(g_note_row, f);
+  }
+  if (std::fclose(f) != 0) {
+    unmount();
+    return;
+  }
+  ::remove(final_path);  // FATFS rename won't overwrite an existing target
+  if (::rename(tmp, final_path) != 0) unmount();
+}
+
+bool ShotStore::note(uint32_t id, core::ShotNote* out) const {
+  if (!available_) return false;
+  bool found = false;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (const core::ShotNote& n : notes_) {
+    if (n.id == id) {
+      if (out != nullptr) *out = n;
+      found = true;
+      break;
+    }
+  }
+  xSemaphoreGive(mutex_);
+  return found;
+}
+
+bool ShotStore::set_note(const core::ShotNote& note) {
+  if (!available_ || notes_readonly_) return false;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  bool known = false;
+  for (const auto& s : index_) {
+    if (s.id == note.id) {
+      known = true;
+      break;
+    }
+  }
+  if (known) {
+    size_t i = 0;
+    while (i < notes_.size() && notes_[i].id != note.id) ++i;
+    if (note.empty()) {
+      if (i < notes_.size()) notes_.erase(notes_.begin() + static_cast<long>(i));
+    } else if (i < notes_.size()) {
+      notes_[i] = note;
+    } else {
+      notes_.push_back(note);
+    }
+  }
+  xSemaphoreGive(mutex_);
+  if (!known) return false;
+  // The RAM list is already the truth; a full queue only delays the file
+  // until the next note change rewrites it whole.
+  SaveJob job{nullptr, 0, JobKind::kNotes};
+  if (xQueueSend(queue_, &job, pdMS_TO_TICKS(250)) != pdTRUE)
+    core::logf("ShotStore: notes queue full, written with the next change\n");
+  return true;
 }
 
 core::ShotStats ShotStore::stats(int64_t now_unix) const {

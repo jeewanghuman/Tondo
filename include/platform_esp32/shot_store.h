@@ -44,6 +44,10 @@ class ShotStore : public core::IShotStore, public core::ISettingsBackup {
   // Drops the shot from the RAM index immediately (the UI refreshes off it);
   // the samples-file delete + index rewrite run on the writer task.
   bool remove(uint32_t id) override;
+  // Notes: RAM list (loaded at mount), file rewritten by the writer task.
+  bool note(uint32_t id, core::ShotNote* out) const override;
+  bool set_note(const core::ShotNote& note) override;
+  bool supports_notes() const override { return true; }
   core::ShotStats stats(int64_t now_unix) const override;
   // Cached by the writer task (mount, idle probe, every save) — FATFS free
   // -space queries aren't safe alongside a concurrent write, so the UI
@@ -69,7 +73,7 @@ class ShotStore : public core::IShotStore, public core::ISettingsBackup {
   static constexpr uint64_t kMinFreeBytes = 2ull * 1024 * 1024;
 
  private:
-  enum class JobKind : uint8_t { kShot, kBackup, kRestore };
+  enum class JobKind : uint8_t { kShot, kBackup, kRestore, kNotes };
 
   struct SaveJob {
     core::ShotRecord* rec;  // PSRAM copy, owned by the writer. null jobs:
@@ -84,6 +88,8 @@ class ShotStore : public core::IShotStore, public core::ISettingsBackup {
   void unmount();             // failure path: drop the card, retry later
   void write_job(SaveJob& job);
   void remove_files(uint32_t id);  // writer task only: samples + index rewrite
+  void load_notes(std::vector<core::ShotNote>& out);  // writer task (mount)
+  void write_notes();         // writer task only: notes.csv from a snapshot
   void refresh_storage();     // writer task only: requery + cache capacity
   void settings_job(const SaveJob& job);  // writer task only: backup / restore
   void refresh_backup_info();  // writer task only: re-read the file's header
@@ -95,6 +101,8 @@ class ShotStore : public core::IShotStore, public core::ISettingsBackup {
   uint32_t next_id_ = 1;
   int64_t stats_since_ = 0;               // cache; guarded by mutex_
   std::vector<core::ShotSummary> index_;  // newest first
+  std::vector<core::ShotNote> notes_;     // annotated shots only; mutex_
+  volatile bool notes_readonly_ = false;  // notes.csv in a format we can't read
   core::StorageInfo storage_info_;        // cache; guarded by mutex_
   core::BackupInfo backup_info_;          // cache; guarded by mutex_
   std::string backup_msg_;                // cache; guarded by mutex_

@@ -1,5 +1,6 @@
 #include "platform_esp32/config_backup.h"
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -27,11 +28,12 @@ constexpr size_t kMaxLine = 256;  // "str:" + 15-char key + kMaxValue + slack
 // Keys that describe THIS UNIT rather than the user's setup: the per-unit
 // paddle GPIO repair knobs (they belong to the board with the damaged pad),
 // the pending-install boot flag (restoring one would send the machine into
-// install mode), the hourly clock seed, and Preferences' own namespace marker.
+// install mode), the hourly clock seed, the phone page's PIN (it unlocks this
+// board, and the file is plain text), and Preferences' own namespace marker.
 // Never written to the file, and held back from the erase on restore.
 bool is_unit_key(const char* k) {
   static const char* kUnit[] = {"padsense", "paddrive", "otainst", "lastunix",
-                                "_init"};
+                                "webpin", "_init"};
   for (const char* u : kUnit)
     if (std::strcmp(k, u) == 0) return true;
   return false;
@@ -93,65 +95,76 @@ size_t hex_decode(const char* in, uint8_t* out, size_t max) {
   return n;
 }
 
+// Append one "tag:key=value" line to `out` printf-style.
+void appendf(std::string& out, const char* fmt, ...) __attribute__((format(printf, 2, 3)));
+void appendf(std::string& out, const char* fmt, ...) {
+  char buf[kMaxLine];
+  va_list ap;
+  va_start(ap, fmt);
+  const int n = std::vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (n > 0) out.append(buf, static_cast<size_t>(n) < sizeof(buf) ? n : sizeof(buf) - 1);
+}
+
 // One "tag:key=value" line for `key`, or false to skip it (unreadable, an
 // unhandled type, or a value longer than we carry).
-bool write_entry(FILE* f, nvs_handle_t h, const nvs_entry_info_t& e) {
+bool write_entry(std::string& f, nvs_handle_t h, const nvs_entry_info_t& e) {
   const char* tag = type_tag(e.type);
   if (tag == nullptr) return false;
   switch (e.type) {
     case NVS_TYPE_U8: {
       uint8_t v = 0;
       if (nvs_get_u8(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "u8:%s=%u\n", e.key, v);
+      appendf(f, "u8:%s=%u\n", e.key, v);
       return true;
     }
     case NVS_TYPE_I8: {
       int8_t v = 0;
       if (nvs_get_i8(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "i8:%s=%d\n", e.key, v);
+      appendf(f, "i8:%s=%d\n", e.key, v);
       return true;
     }
     case NVS_TYPE_U16: {
       uint16_t v = 0;
       if (nvs_get_u16(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "u16:%s=%u\n", e.key, v);
+      appendf(f, "u16:%s=%u\n", e.key, v);
       return true;
     }
     case NVS_TYPE_I16: {
       int16_t v = 0;
       if (nvs_get_i16(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "i16:%s=%d\n", e.key, v);
+      appendf(f, "i16:%s=%d\n", e.key, v);
       return true;
     }
     case NVS_TYPE_U32: {
       uint32_t v = 0;
       if (nvs_get_u32(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "u32:%s=%lu\n", e.key, static_cast<unsigned long>(v));
+      appendf(f, "u32:%s=%lu\n", e.key, static_cast<unsigned long>(v));
       return true;
     }
     case NVS_TYPE_I32: {
       int32_t v = 0;
       if (nvs_get_i32(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "i32:%s=%ld\n", e.key, static_cast<long>(v));
+      appendf(f, "i32:%s=%ld\n", e.key, static_cast<long>(v));
       return true;
     }
     case NVS_TYPE_U64: {
       uint64_t v = 0;
       if (nvs_get_u64(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "u64:%s=%llu\n", e.key, static_cast<unsigned long long>(v));
+      appendf(f, "u64:%s=%llu\n", e.key, static_cast<unsigned long long>(v));
       return true;
     }
     case NVS_TYPE_I64: {
       int64_t v = 0;
       if (nvs_get_i64(h, e.key, &v) != ESP_OK) return false;
-      std::fprintf(f, "i64:%s=%lld\n", e.key, static_cast<long long>(v));
+      appendf(f, "i64:%s=%lld\n", e.key, static_cast<long long>(v));
       return true;
     }
     case NVS_TYPE_STR: {
       char buf[kMaxValue];
       size_t len = sizeof(buf);
       if (nvs_get_str(h, e.key, buf, &len) != ESP_OK) return false;
-      std::fprintf(f, "str:%s=%s\n", e.key, buf);
+      appendf(f, "str:%s=%s\n", e.key, buf);
       return true;
     }
     default: {  // blob (a float, in practice)
@@ -160,7 +173,7 @@ bool write_entry(FILE* f, nvs_handle_t h, const nvs_entry_info_t& e) {
       if (nvs_get_blob(h, e.key, raw, &len) != ESP_OK) return false;
       char hex[kMaxValue + 1];
       hex_encode(raw, len, hex);
-      std::fprintf(f, "blob:%s=%s\n", e.key, hex);
+      appendf(f, "blob:%s=%s\n", e.key, hex);
       return true;
     }
   }
@@ -207,6 +220,8 @@ bool apply_line(nvs_handle_t h, char* line) {
 // The per-unit keys, lifted out before the erase and put back after it.
 struct UnitKeys {
   bool has_sense = false, has_drive = false, has_pending = false, has_seed = false;
+  bool has_pin = false;
+  char pin[8] = "";
   int32_t sense = 0, drive = 0;
   int64_t seed = 0;
   char pending[32] = "";
@@ -218,6 +233,8 @@ void read_unit_keys(nvs_handle_t h, UnitKeys& u) {
   u.has_seed = nvs_get_i64(h, "lastunix", &u.seed) == ESP_OK;
   size_t len = sizeof(u.pending);
   u.has_pending = nvs_get_str(h, "otainst", u.pending, &len) == ESP_OK;
+  len = sizeof(u.pin);
+  u.has_pin = nvs_get_str(h, "webpin", u.pin, &len) == ESP_OK;
 }
 
 void write_unit_keys(nvs_handle_t h, const UnitKeys& u) {
@@ -225,6 +242,7 @@ void write_unit_keys(nvs_handle_t h, const UnitKeys& u) {
   if (u.has_drive) nvs_set_i32(h, "paddrive", u.drive);
   if (u.has_seed) nvs_set_i64(h, "lastunix", u.seed);
   if (u.has_pending) nvs_set_str(h, "otainst", u.pending);
+  if (u.has_pin) nvs_set_str(h, "webpin", u.pin);
 }
 
 // Strip the trailing newline a fgets() line carries.
@@ -233,28 +251,52 @@ void chomp(char* s) {
   while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r')) s[--n] = '\0';
 }
 
+// Walk `text` a line at a time into `line` (chomped; an overlong line is cut
+// at kMaxLine like fgets would). False at the end.
+bool next_line(const std::string& text, size_t& pos, char (&line)[kMaxLine]) {
+  if (pos >= text.size()) return false;
+  size_t end = text.find('\n', pos);
+  if (end == std::string::npos) end = text.size();
+  size_t n = end - pos;
+  if (n >= kMaxLine) n = kMaxLine - 1;
+  std::memcpy(line, text.data() + pos, n);
+  line[n] = '\0';
+  chomp(line);
+  pos = end + 1;
+  return true;
+}
+
+// The whole file, or false. Backups are a few KB.
+bool slurp(const char* path, std::string* out) {
+  FILE* f = std::fopen(path, "r");
+  if (f == nullptr) return false;
+  char buf[512];
+  size_t n;
+  out->clear();
+  while ((n = std::fread(buf, 1, sizeof(buf), f)) > 0) {
+    out->append(buf, n);
+    if (out->size() > 64 * 1024) break;  // not a settings file
+  }
+  std::fclose(f);
+  return true;
+}
+
 }  // namespace
 
-bool settings_backup_write(const char* path, bool include_wifi, bool include_token,
-                           int* out_count, std::string* err) {
+bool settings_backup_text(bool include_wifi, bool include_token, std::string* out,
+                          int* out_count, std::string* err) {
   nvs_handle_t h;
   esp_err_t rc = nvs_open(kConfigNamespace, NVS_READONLY, &h);
   if (rc != ESP_OK) {
     if (err) *err = "No settings to back up yet.";
     return false;
   }
-  FILE* f = std::fopen(path, "w");
-  if (f == nullptr) {
-    nvs_close(h);
-    if (err) *err = "The card could not be written.";
-    return false;
-  }
-
-  std::fprintf(f, "# Tondo settings backup\nformat=%d\nversion=%s\nboard=%s\n",
-               kFormat, fw::kVersion, board::kUpdateSlug);
-  std::fprintf(f, "saved=%lld\nwifi=%d\ntoken=%d\n",
-               static_cast<long long>(time(nullptr)), include_wifi ? 1 : 0,
-               include_token ? 1 : 0);
+  std::string& f = *out;
+  f.clear();
+  appendf(f, "# Tondo settings backup\nformat=%d\nversion=%s\nboard=%s\n", kFormat,
+          fw::kVersion, board::kUpdateSlug);
+  appendf(f, "saved=%lld\nwifi=%d\ntoken=%d\n", static_cast<long long>(time(nullptr)),
+          include_wifi ? 1 : 0, include_token ? 1 : 0);
 
   int n = 0;
   nvs_iterator_t it = nullptr;
@@ -275,8 +317,22 @@ bool settings_backup_write(const char* path, bool include_wifi, bool include_tok
   }
   nvs_release_iterator(it);
   nvs_close(h);
+  if (out_count) *out_count = n;
+  return true;
+}
 
-  const bool ok = std::fflush(f) == 0;
+bool settings_backup_write(const char* path, bool include_wifi, bool include_token,
+                           int* out_count, std::string* err) {
+  std::string text;
+  int n = 0;
+  if (!settings_backup_text(include_wifi, include_token, &text, &n, err)) return false;
+  FILE* f = std::fopen(path, "w");
+  if (f == nullptr) {
+    if (err) *err = "The card could not be written.";
+    return false;
+  }
+  const bool ok = std::fwrite(text.data(), 1, text.size(), f) == text.size() &&
+                  std::fflush(f) == 0;
   std::fclose(f);
   if (!ok) {
     if (err) *err = "The card ran out of space.";
@@ -288,15 +344,13 @@ bool settings_backup_write(const char* path, bool include_wifi, bool include_tok
   return true;
 }
 
-bool settings_backup_read(const char* path, core::BackupInfo* out) {
-  FILE* f = std::fopen(path, "r");
-  if (f == nullptr) return false;
+bool settings_backup_parse(const std::string& text, core::BackupInfo* out) {
   char line[kMaxLine];
+  size_t pos = 0;
   int format = 0;
   core::BackupInfo info;
   info.file_present = true;
-  while (std::fgets(line, sizeof(line), f) != nullptr) {
-    chomp(line);
+  while (next_line(text, pos, line)) {
     if (std::strncmp(line, "format=", 7) == 0) format = std::atoi(line + 7);
     else if (std::strncmp(line, "version=", 8) == 0) info.version = line + 8;
     else if (std::strncmp(line, "board=", 6) == 0) info.board = line + 6;
@@ -305,7 +359,6 @@ bool settings_backup_read(const char* path, core::BackupInfo* out) {
     else if (std::strncmp(line, "token=", 6) == 0) info.has_token = line[6] == '1';
     else if (std::strchr(line, ':') != nullptr) break;  // header done
   }
-  std::fclose(f);
   if (format != kFormat || info.version.empty()) return false;
   // A backup from a newer build may hold values this firmware's fixed arrays
   // can't index (the NVS rule) — surfaced here, refused in restore.
@@ -314,9 +367,15 @@ bool settings_backup_read(const char* path, core::BackupInfo* out) {
   return true;
 }
 
-bool settings_backup_restore(const char* path, int* out_count, std::string* err) {
+bool settings_backup_read(const char* path, core::BackupInfo* out) {
+  std::string text;
+  return slurp(path, &text) && settings_backup_parse(text, out);
+}
+
+bool settings_backup_restore_text(const std::string& text, int* out_count,
+                                  std::string* err) {
   core::BackupInfo info;
-  if (!settings_backup_read(path, &info)) {
+  if (!settings_backup_parse(text, &info)) {
     if (err) *err = "That file isn't a Tondo settings backup.";
     return false;
   }
@@ -324,14 +383,8 @@ bool settings_backup_restore(const char* path, int* out_count, std::string* err)
     if (err) *err = "The backup is newer than this firmware.";
     return false;
   }
-  FILE* f = std::fopen(path, "r");
-  if (f == nullptr) {
-    if (err) *err = "The card could not be read.";
-    return false;
-  }
   nvs_handle_t h;
   if (nvs_open(kConfigNamespace, NVS_READWRITE, &h) != ESP_OK) {
-    std::fclose(f);
     if (err) *err = "Settings storage is unavailable.";
     return false;
   }
@@ -346,8 +399,8 @@ bool settings_backup_restore(const char* path, int* out_count, std::string* err)
 
   int n = 0, bad = 0;
   char line[kMaxLine];
-  while (std::fgets(line, sizeof(line), f) != nullptr) {
-    chomp(line);
+  size_t pos = 0;
+  while (next_line(text, pos, line)) {
     if (line[0] == '\0' || line[0] == '#') continue;
     if (std::strchr(line, ':') == nullptr) continue;  // header line
     // A key this firmware doesn't know is written back anyway: unknown keys are
@@ -355,7 +408,6 @@ bool settings_backup_restore(const char* path, int* out_count, std::string* err)
     // from quietly dropping a newer build's settings.
     if (apply_line(h, line)) ++n; else ++bad;
   }
-  std::fclose(f);
   const esp_err_t rc = nvs_commit(h);
   nvs_close(h);
   if (rc != ESP_OK) {
@@ -363,8 +415,17 @@ bool settings_backup_restore(const char* path, int* out_count, std::string* err)
     return false;
   }
   if (out_count) *out_count = n;
-  core::logf("Settings: restored %d keys from %s (%d skipped)\n", n, path, bad);
+  core::logf("Settings: restored %d keys (%d skipped)\n", n, bad);
   return true;
+}
+
+bool settings_backup_restore(const char* path, int* out_count, std::string* err) {
+  std::string text;
+  if (!slurp(path, &text)) {
+    if (err) *err = "That file isn't a Tondo settings backup.";
+    return false;
+  }
+  return settings_backup_restore_text(text, out_count, err);
 }
 
 }  // namespace platform

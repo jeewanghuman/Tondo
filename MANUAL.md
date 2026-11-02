@@ -19,6 +19,8 @@ row of three buttons at the bottom switches between **Home**, **Settings** and
 - [Settings → Tondo](#settings-device) — Display · Sound · Time & date · WiFi ·
   Backup · Root page
 - [Stats](#stats-section) — Brew/Steam history · History · Info
+- [Phone page](#phone-page) — tondo.local: Live · History · Trends ·
+  Settings · the PIN · Add to Home Screen
 - [Brew‑by‑weight quick reference](#bbw-reference)
 
 ---
@@ -63,6 +65,7 @@ Settings
 │  │               · Shot sounds · Milk sounds · Alerts
 │  ├─ Time & date — Time · Date (until Auto time sets them) · 24-hour · Timezone
 │  ├─ WiFi        — Enable · Status · Set up WiFi → QR portal · Forget
+│  │               · Phone page (tondo.local) · Phone PIN (↻ = new PIN)
 │  │               · Auto time (NTP) · Check for updates (Off/Boot/Daily/Hourly)
 │  │                 → notice → Install now · Beta updates
 │  └─ Backup      — On the card · Back up to card · Restore from card
@@ -74,6 +77,15 @@ Stats
 │            └─ tap a shot → full-screen shot card (with delete)
 └─ Info — firmware (Check for updates; long-press → performance overlay) · uptime
           · IP · NTP synced · Diagnostic log (tap → viewer) · Micra details
+
+Phone page (http://tondo.local, any browser on the same WiFi)
+├─ Live     — machine state · Standby/Turn on · brew −/+ · steam on/off + level
+│             · scale weight + battery · the running shot's graph
+├─ History  — stats · period + beans filters · shots → graph, compare,
+│             rating / beans / notes, delete, PNG/CSV · export everything
+├─ Trends   — shots per day/week · yield + time · on target · by beans
+└─ Settings — PIN unlock · page name · Display · Sound · Shots · Updates
+              (check / install) · Settings backup (download / restore)
 ```
 
 ---
@@ -651,8 +663,8 @@ history is always reachable.
 ![WiFi settings](docs/img/manual/device-wifi.png)
 
 - ① **Enable** *(default off)* — join your home network. Used for the clock,
-  update checks and the History web page; all machine/scale control is local
-  Bluetooth.
+  update checks and the [phone page](#phone-page); the machine and scale
+  themselves are always reached over Bluetooth.
 - ② **Status** — `Off`, `Connecting`, `Connection failed`, or — once
   connected — the network name and IP address in green.
 - ③ **Set up WiFi** — starts the device's own access point (`Micra-Setup`) and
@@ -665,9 +677,17 @@ history is always reachable.
   </p>
 
 - ③ **Forget** — clears the saved network.
-- ④ **Auto time (NTP)** *(default on)* — sync the clock over WiFi while
+- ④ **Phone page** — the address of Tondo's own web page,
+  `tondo.local` (open `http://tondo.local` in any browser on the same WiFi;
+  see [Phone page](#phone-page)). Reads **Needs WiFi** until connected. The
+  name can be changed from the page itself.
+- ⑤ **Phone PIN** — four digits that unlock changes from the phone (looking
+  needs no PIN). Tap **↻** for a new PIN: every phone that had the old one
+  is asked again. The PIN stays on this unit — it is never written into a
+  settings backup.
+- ⑥ **Auto time (NTP)** *(default on)* — sync the clock over WiFi while
   connected. (The timezone it applies is set under **Time & date**.)
-- ⑤ **Check for updates** *(default On boot)* — tap to cycle **Off / On boot /
+- **Check for updates** *(default On boot; further down the page)* — tap to cycle **Off / On boot /
   Daily / Hourly**. "On boot" checks once at startup; "Daily" and "Hourly" also
   re-check on that interval while the machine stays on — always during an idle
   moment (the idle screen is up), so they never get in the way. If Screen
@@ -695,7 +715,7 @@ history is always reachable.
   [web flasher](https://jeewanghuman.github.io/Tondo/) remains the
   fallback for recovery and for the very first flash.
 
-- ⑥ **Beta updates** *(default off; shown only while checks are on)* — also
+- **Beta updates** *(default off; shown only while checks are on)* — also
   offer pre-release builds, named like `0.15.0-beta.1`. Betas ship the next
   release early so it can be tested on real machines; they are less proven than
   a normal release, and the notice, the install and the automatic roll-back on
@@ -834,13 +854,9 @@ action lives directly on the root:
     while every recorded shot stays on the card. Undo by deleting
     `Tondo/stats_since.txt` on a computer.
   - **Browse from your phone or computer**: with WiFi connected, open
-    `http://⟨device IP⟩/` (the address is in the footer and on **Stats →
-    Info**). The device serves its own web page — the same stats, with month
-    filters, and the shot list, with a live graph per shot, a **Download
-    card** button that saves any shot as a PNG image (composed in your
-    browser from the raw data), and CSV downloads. The same built‑in web
-    server also carries the setup pages during pairing/WiFi setup, so nothing
-    conflicts.
+    `http://tondo.local` — the [phone page](#phone-page). Its History tab
+    has the same stats and shot list, plus notes, comparisons and exports.
+    (The numeric address in the footer and on **Stats → Info** works too.)
 
 ![Device info](docs/img/manual/stats-info.png)
 
@@ -877,6 +893,76 @@ action lives directly on the root:
     found. The dump survives reboots and even firmware
     upgrades until the next crash overwrites it;
     `http://⟨device IP⟩/coredump?erase=1` clears it manually.
+
+---
+
+<a id="phone-page"></a>
+
+## Phone page
+
+Tondo serves its own web page. With WiFi connected (**Settings → Tondo →
+WiFi**), open **`http://tondo.local`** in any browser on the same network —
+a phone, a tablet or a computer. Nothing to install, and nothing leaves your
+network: the page comes from Tondo itself.
+
+- **Looking is open; changing needs the PIN.** Anyone on your WiFi can see
+  the page. Anything that changes something — power, temperatures, settings,
+  notes, deleting a shot, installing an update — asks once for the **Phone
+  PIN** shown under **Settings → Tondo → WiFi**, and the browser remembers it.
+  Five wrong tries lock changes for a minute.
+- **A shot can never be started from the phone.** The group only runs with
+  someone at the machine: there is no shot, flush or backflush button on the
+  page, on purpose.
+- **Add to Home Screen** (Safari's Share menu, or Chrome's menu) puts a Tondo
+  icon on the phone that opens the page full screen, like an app. It needs
+  the WiFi: it's the same page, not an offline copy.
+- **Another name** — if `tondo.local` doesn't suit (a second Tondo, say),
+  change it under **Settings → Phone access** on the page; the new address
+  is shown there and on the device. A few older Android phones don't resolve
+  `.local` names: use the numeric address from **Stats → Info** instead.
+
+<p align="center">
+  <img src="docs/img/manual/phone-live.png" width="30%" alt="Live tab">
+  <img src="docs/img/manual/phone-shot.png" width="30%" alt="A shot, compared with another">
+  <img src="docs/img/manual/phone-trends.png" width="30%" alt="Trends tab">
+</p>
+
+**Live** — the machine right now, refreshed every second: Ready / Heating /
+Standby, **Standby / Turn on**, the brew temperature with **−/+** (0.5 °C a
+tap), the steam boiler's switch and its three levels, the scale's weight and
+battery, and during a shot the weight, timer and graph (weight and flow) as
+it happens. The last shot's graph stays until the next one.
+
+**History** — the headline stats and every shot on the card. Filter by
+**7 days**, **30 days**, a month, or by beans. Tap a shot for its graph and:
+- **Compare with** — overlay any other shot, dashed, with the difference in
+  grams and seconds.
+- **Rating, Beans, Notes** — saved on the card beside the shot
+  (`/Tondo/notes.csv`), so they travel with the history. Beans you've typed
+  before are offered as you type.
+- **Download card (PNG)** / **Download data (CSV)** for that shot, and
+  **Delete shot** (for good, with its notes).
+
+At the bottom, **Export shots (CSV)** downloads every shot with its notes as
+one spreadsheet, and **Export every graph (CSV)** every shot's samples in one
+long table.
+
+**Trends** — over the last 4, 12, 26 or 52 weeks: shots per day (or week),
+the weekly average yield and time, how close shots land on target (accuracy,
+and grams over or under), and a table by beans with each one's shots,
+average rating, yield and time.
+
+**Settings** — the same settings as on the device, applied through the
+device's own controls so the screen follows along: brightness, screen
+timeout and idle screen, Fahrenheit, 24-hour clock; the sound switches,
+volume and ready chime; target weight, review time, auto flush and its
+delay; update checks, beta updates, **Check now** and — when an update is
+found — its notes and **Install**, which restarts Tondo into the installer
+exactly as **Install now** on the device does. **Settings backup** downloads
+the same file **Back up to card** writes (choose whether it includes the
+WiFi password and the pairing token) and **Restore from file…** loads one
+back: every setting is replaced and Tondo restarts. Also here: the page's
+name, **Lock** (forget the PIN on this phone), and the diagnostic log.
 
 ---
 

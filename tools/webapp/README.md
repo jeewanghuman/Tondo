@@ -1,8 +1,25 @@
 # Tondo web app
 
-The shot-history page the device serves at `http://<device-ip>/` — a
-single-file React + Material UI app, gzipped and embedded in the firmware
-as `include/platform_esp32/webapp_dist.h`.
+The phone page the device serves at `http://tondo.local` (mDNS; the name is
+a setting) — a single-file React + Material UI app, gzipped and embedded in
+the firmware as `include/platform_esp32/webapp_dist.h`. Four tabs:
+
+- `LiveTab.jsx` — polls `/api/live` once a second (5 s in the background);
+  power / brew / steam go to `/api/control`. Never a shot: the device has no
+  route for one.
+- `HistoryTab.jsx` — `/api/shots` (notes ride in each row), compare, notes
+  (`/api/shot/note`), delete, exports.
+- `TrendsTab.jsx` — computed here from the shot list.
+- `SettingsTab.jsx` — `/api/settings`, updates, backup download / restore.
+
+Every POST carries the PIN shown on the device (`api.js` keeps it in
+localStorage; a 403 forgets it). The device-side routes and their threading
+are documented in `include/platform_esp32/web_ui.h`.
+
+`public/` holds the home-screen icons (drawn by `gen_icons.py`, committed);
+`gen_header.py` embeds them next to the page, and the device serves them with
+`/manifest.webmanifest` for "Add to Home Screen". There is no service worker:
+browsers only allow one over https.
 
 It styles itself from the DEVICE'S ACTIVE THEME at load (`/api/summary`
 carries the palette), so the page always matches the screen.

@@ -58,11 +58,23 @@ class Network : public core::INetwork {
   bool ntp_enabled() const override;
   void set_ntp_enabled(bool on) override;
 
+  // Phone page. Readable from any task: fixed buffers, so a torn read during
+  // a change shows a mixed string for one request at worst, never a dangling
+  // pointer. set_web_name() is called by the web task: it validates (a-z,
+  // 0-9, '-', 1..kWebNameMax, no leading/trailing '-'), persists, and renames
+  // the mDNS host at once.
+  static constexpr size_t kWebNameMax = 24;
+  const char* web_name() const override { return web_name_; }
+  const char* web_pin() const override { return web_pin_; }
+  void new_web_pin() override;
+  bool set_web_name(const char* name);
+
  private:
   void start_station();  // (re)connect STA from the saved credentials
   void stop_station();
   void on_connected();   // capture IP + kick off NTP
   void start_ntp();      // (re)start SNTP against the configured server
+  void start_mdns();     // first connect: advertise <web_name>.local + http
 
   Config& config_;
   Clock& clock_;
@@ -77,6 +89,9 @@ class Network : public core::INetwork {
   bool ntp_relaxed_ = false;          // synced once -> slow the SNTP poll to hourly
   bool time_persisted_ = false;       // have we written a valid NTP time to the RTC?
   bool from_portal_ = false;          // connecting with creds just entered via the portal
+  bool mdns_started_ = false;         // MDNS.begin done (it follows reconnects itself)
+  char web_name_[kWebNameMax + 1] = "tondo";
+  char web_pin_[8] = "";
 };
 
 }  // namespace platform
