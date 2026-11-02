@@ -1,1 +1,1 @@
-window.TONDO_VERSION = "v1.4.1";
+window.TONDO_VERSION = "v1.5.0";
