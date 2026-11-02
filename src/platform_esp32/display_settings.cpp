@@ -107,6 +107,12 @@ int DisplaySettings::milk_type() const { return config_.milk_type(); }
 void DisplaySettings::set_milk_type(int index) { config_.set_milk_type(index); }
 int DisplaySettings::milk_ml(int drink) const { return config_.milk_ml(drink); }
 void DisplaySettings::set_milk_ml(int drink, int ml) { config_.set_milk_ml(drink, ml); }
+bool DisplaySettings::shot_sounds() const { return config_.shot_sounds(); }
+void DisplaySettings::set_shot_sounds(bool on) { config_.set_shot_sounds(on); }
+bool DisplaySettings::milk_sounds() const { return config_.milk_sounds(); }
+void DisplaySettings::set_milk_sounds(bool on) { config_.set_milk_sounds(on); }
+bool DisplaySettings::alert_sounds() const { return config_.alert_sounds(); }
+void DisplaySettings::set_alert_sounds(bool on) { config_.set_alert_sounds(on); }
 
 void DisplaySettings::set_ready_chime_volume(int percent) {
   config_.set_ready_chime_volume(percent);

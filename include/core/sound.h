@@ -43,7 +43,28 @@ enum class Timbre {
 enum class Cue {
   ButtonPress,  // tick under every button, the one sound that must feel instant
   Ready,        // the machine has finished warming up (see core::ReadyChime)
+  // Shot sounds (CueGroup::kShot)
+  ShotStart,    // a shot began: the paddle, or the detector confirmed one
+  ShotNear,     // a few grams before the target (Shot detect: "stop now")
+  ShotDone,     // the shot stopped and is settling into its review
+  // Milk sheet (CueGroup::kMilk)
+  MilkClose,    // the last fifth of the target
+  MilkOnTarget, // inside the target band
+  MilkOver,     // poured past it
+  // Alerts (CueGroup::kAlert)
+  SteamReady,        // steam boiler up to temperature after being switched on
+  ScaleConnected,
+  ScaleDisconnected,
+  ScaleBatteryLow,   // with the "Scale battery low" notice
+  MachineLost,       // the Bluetooth link to the machine dropped
+  BackflushDone,
+  CleanLockEnding,   // the cleaning lock's last seconds (one per second)
 };
+
+// Which Settings > Tondo > Sound switch governs a cue. kNone: the button tick
+// and the warm-up chime, which have their own settings.
+enum class CueGroup { kNone, kShot, kMilk, kAlert };
+CueGroup cue_group(Cue cue);
 
 // One request to the speaker: what to sound, how, and how loudly.
 struct Playback {

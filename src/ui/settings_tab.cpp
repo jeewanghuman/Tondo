@@ -357,6 +357,17 @@ void build_device_sound_rows(lv_obj_t* page, const lv_font_t* text_font,
   lv_obj_t* rs = make_setting_row(page, "Button sounds", text_font);
   out.click_sound_switch = lv_switch_create(rs);
   lv_obj_set_size(out.click_sound_switch, btn_size + ui::dp(8), btn_size / 2 + ui::dp(6));
+
+  // The event sounds, one switch per core::CueGroup, at the chime volume.
+  auto event_switch = [&](const char* label) {
+    lv_obj_t* r = make_setting_row(page, label, text_font);
+    lv_obj_t* sw = lv_switch_create(r);
+    lv_obj_set_size(sw, btn_size + ui::dp(8), btn_size / 2 + ui::dp(6));
+    return sw;
+  };
+  out.shot_sounds_switch = event_switch("Shot sounds");
+  out.milk_sounds_switch = event_switch("Milk sounds");
+  out.alert_sounds_switch = event_switch("Alerts");
 }
 
 // A bare dropdown for a time/date field: tier font on the button AND the popup
@@ -726,6 +737,7 @@ void build_settings_tab(lv_obj_t* parent, const ScreenProfile& screen,
   out.chime_vol_minus = out.chime_vol_slider = out.chime_vol_value = nullptr;
   out.chime_vol_plus = out.chime_mel_btn = out.chime_mel_value = nullptr;
   out.click_sound_switch = nullptr;
+  out.shot_sounds_switch = out.milk_sounds_switch = out.alert_sounds_switch = nullptr;
   out.brew_open_row = out.steam_open_row = nullptr;
   out.brew_minus = out.brew_plus = out.steam_switch = nullptr;
   out.boiler_minus = out.boiler_plus = out.boiler_sub = nullptr;

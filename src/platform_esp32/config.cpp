@@ -52,6 +52,9 @@ constexpr char kReadyMelodyKey[] = "rdymel";     // warm-up tune: 0 off, 1.. mel
 constexpr char kMilkDrinkKey[] = "milkdrk";
 constexpr char kMilkTypeKey[] = "milktyp";
 constexpr char kMilkMlKeyPrefix[] = "milkml";
+constexpr char kShotSoundsKey[] = "sndshot";    // event-sound switches (bools,
+constexpr char kMilkSoundsKey[] = "sndmilk";    // default on)
+constexpr char kAlertSoundsKey[] = "sndalert";
 // Out of the box: loud enough to carry, quiet enough that the first warm-up
 // after a flash doesn't startle anyone. 80 on the perceptual scale is the same
 // loudness the old linear 50 % produced (see migrate_chime_volume).
@@ -724,7 +727,29 @@ bool milk_ml_key(int drink, char (&key)[12]) {
   std::snprintf(key, sizeof(key), "%s%d", kMilkMlKeyPrefix, drink);
   return true;
 }
+
+bool read_bool(const char* key, bool fallback) {
+  Preferences p;
+  if (!p.begin(kNamespace, /*readOnly=*/true)) return fallback;
+  const bool v = p.isKey(key) ? p.getBool(key, fallback) : fallback;
+  p.end();
+  return v;
+}
+
+void write_bool(const char* key, bool v) {
+  Preferences p;
+  p.begin(kNamespace, /*readOnly=*/false);
+  p.putBool(key, v);
+  p.end();
+}
 }  // namespace
+
+bool Config::shot_sounds() const { return read_bool(kShotSoundsKey, true); }
+void Config::set_shot_sounds(bool on) { write_bool(kShotSoundsKey, on); }
+bool Config::milk_sounds() const { return read_bool(kMilkSoundsKey, true); }
+void Config::set_milk_sounds(bool on) { write_bool(kMilkSoundsKey, on); }
+bool Config::alert_sounds() const { return read_bool(kAlertSoundsKey, true); }
+void Config::set_alert_sounds(bool on) { write_bool(kAlertSoundsKey, on); }
 
 int Config::milk_drink() const { return read_int(kMilkDrinkKey, -1); }
 void Config::set_milk_drink(int index) { write_int(kMilkDrinkKey, index); }

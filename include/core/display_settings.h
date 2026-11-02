@@ -123,6 +123,16 @@ class IDisplaySettings {
   virtual void set_milk_type(int index) = 0;
   virtual int milk_ml(int drink) const = 0;
   virtual void set_milk_ml(int drink, int ml) = 0;
+
+  // The event sounds, one switch per core::CueGroup (shot start/near/done;
+  // the Milk sheet's close/target/over; alerts). Default on; they play at the
+  // chime volume. Same speaker requirement as click_sound. Persisted.
+  virtual bool shot_sounds() const = 0;
+  virtual void set_shot_sounds(bool on) = 0;
+  virtual bool milk_sounds() const = 0;
+  virtual void set_milk_sounds(bool on) = 0;
+  virtual bool alert_sounds() const = 0;
+  virtual void set_alert_sounds(bool on) = 0;
 };
 
 }  // namespace core

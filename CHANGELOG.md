@@ -7,6 +7,13 @@ for someone reading the diff. These notes are also shown ON THE DEVICE, whose
 fonts are ASCII-only: stick to characters `sanitize_notes()` (src/ui/app.cpp)
 maps — plain ASCII plus `— – → … × ' "` — or they render as empty boxes.
 
+## Unreleased
+
+- **More sounds.** Tondo can now sound the start, the last few grams and the
+  end of a shot, the milk sheet's approach, target and overpour, and alerts:
+  steam ready, scale and machine connections, scale battery low, backflush
+  done and the cleaning lock's countdown. Switch each group under Sound.
+
 ## v1.4.1
 
 - **Milk lists.** On the Milk sheet, tapping the drink or the milk now opens

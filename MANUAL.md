@@ -60,6 +60,7 @@ Settings
 │  ├─ Display     — Brightness · Screen timeout
 │  │               · Idle screen (Lion/Dim/Off/Clock) · Fahrenheit
 │  ├─ Sound       — Chime melody · Chime volume · Button sounds
+│  │               · Shot sounds · Milk sounds · Alerts
 │  ├─ Time & date — Time · Date (until Auto time sets them) · 24-hour · Timezone
 │  ├─ WiFi        — Enable · Status · Set up WiFi → QR portal · Forget
 │  │               · Auto time (NTP) · Check for updates (Off/Boot/Daily/Hourly)
@@ -578,7 +579,8 @@ Everything the speaker does, on one page.
   tune each time the machine warms up; `Off` silences the chime regardless of
   the volume below.
 - ② **Chime volume** *(0–100 %, default 80 %)* — the warm‑up chime's level, so
-  you can walk away and be called back. Drag the slider to get close, or tap
+  you can walk away and be called back. The shot, milk and alert sounds below
+  play at this level too. Drag the slider to get close, or tap
   **–** / **+** to nudge it 5 % at a time; either way it **plays a note at the
   new level** so you can set it by ear. `0 %` shows as `Off` and silences it.
   The scale is even *to the ear* rather than arithmetically — each step is the
@@ -596,6 +598,34 @@ Everything the speaker does, on one page.
 - ③ **Button sounds** *(default on)* — click on button presses. With button
   sounds off *and* the chime volume `Off`, the audio hardware stays powered
   down until the next restart.
+- ④ **Shot sounds** *(default on)* — while you pull a shot, so your eyes can
+  stay on the cup:
+  - **Start** (two rising notes): a shot began — you flipped the paddle, or
+    **Shot detect** recognised one.
+  - **Nearly there** (a double note): a few grams before the target (10 %, at
+    least 3 g). In **Shot detect** it sounds with the **Stop** flash instead —
+    flip the paddle now.
+  - **Done** (three falling notes): the shot stopped and is settling into its
+    review. A short run that isn't a shot (a rinse) stays silent.
+- ⑤ **Milk sounds** *(default on)* — on the [milk sheet](#milk-sheet), after
+  **Tare**: a soft tick as you enter the last fifth, a bright two‑note chime
+  when you're on target, and a low double note if you pour past it. Each
+  sounds once per pour; **Tare** or a new drink starts afresh.
+- ⑥ **Alerts** *(default on)*:
+  - **Steam ready** — the steam boiler has reached temperature after you
+    switched it on later in a session. (When it warms up with the machine,
+    the warm‑up chime already covers it.)
+  - **Scale connected / disconnected** — two quick notes, up or down.
+  - **Scale battery low** — with the low‑battery notice.
+  - **Machine disconnected** — three falling notes when the Bluetooth link to
+    the Micra drops. (Switching the Micra off at its switch drops the link too,
+    so you'll hear it then.)
+  - **Backflush finished** — a rising chime at the end of the cycle.
+  - **Cleaning lock** — a tick for each of the last three seconds before the
+    screen unlocks.
+
+Turning one of the three switches on plays a sound from its group, so you can
+check the level.
 
 ### Time & date
 

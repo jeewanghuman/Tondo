@@ -87,4 +87,43 @@ class ReadyChime {
   bool steam_known_ = false;
 };
 
+// "Steam is up" -- the case ReadyChime deliberately doesn't cover: steam
+// switched ON while the machine is already running, after the session's one
+// warm-up chime. Fires once per switch-on, when that warm-up completes (the
+// machine reads !heating, which with steam on means both boilers are there),
+// and only if the steam boiler was actually seen warming -- turning steam
+// back on while it is still hot is not news. A dip during steaming never
+// re-arms it: only a fresh off->on edge does (same lesson as ReadyChime's
+// removed temperature re-arm). The caller passes ReadyChime's result so the
+// two never sound for the same moment.
+class SteamReadyChime {
+ public:
+  bool update(const MachineSnapshot& s, bool heating, bool ready_chimed) {
+    if (s.link != Link::Connected || s.power != Power::On) {
+      pending_ = warmed_ = known_ = false;
+      return false;
+    }
+    if (known_ && s.steam_enabled && !was_) {  // switched on, mid-session
+      pending_ = true;
+      warmed_ = false;
+    }
+    if (!s.steam_enabled) pending_ = false;
+    was_ = s.steam_enabled;
+    known_ = true;
+    if (!pending_) return false;
+    if (s.boiler_temp_c > 0.0f && s.boiler_target_c > 0.0f &&
+        s.boiler_target_c - s.boiler_temp_c >= kChimeArmDeltaC)
+      warmed_ = true;
+    if (heating) return false;
+    pending_ = false;
+    return warmed_ && !ready_chimed;
+  }
+
+ private:
+  bool pending_ = false;  // steam switched on; waiting for it to arrive
+  bool warmed_ = false;   // ...and it was seen genuinely below temperature
+  bool was_ = false;      // last steam_enabled
+  bool known_ = false;    // was_ is meaningful (a first poll is no edge)
+};
+
 }  // namespace core

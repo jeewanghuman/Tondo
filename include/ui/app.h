@@ -182,6 +182,9 @@ class App {
   void set_perf_overlay(bool on);        // LVGL FPS/CPU overlay (persisted)
   void toggle_perf_overlay();            // long-press on Stats > Info's Firmware row
   void set_click_sound(bool on);         // Device > Sound "Button sounds" switch
+  void set_shot_sounds(bool on);         // Device > Sound: the event-sound switches
+  void set_milk_sounds(bool on);         // (core::CueGroup); turning one on
+  void set_alert_sounds(bool on);        // auditions a sound from its group
   // Sound "Chime volume": linear 0-100 (0 = Off), slider + [-]/[+]. sound.cpp
   // maps it onto a dB curve so the steps are even by ear.
   void set_ready_chime_vol(int percent, bool audition);
@@ -350,6 +353,9 @@ class App {
   int milk_type_ = 0;                  // core::kMilkTypes index
   int milk_ml_ = 0;                    // that drink's amount, ml
   bool milk_tared_ = false;            // the sheet's Tare used since opening
+  bool milk_close_played_ = false;     // milk sounds: once per pour (reset by
+  bool milk_target_played_ = false;    // Tare or a new target), so a reading
+  bool milk_over_played_ = false;      // wobbling across a band can't repeat
   bool milk_seen_ = false;             // drawn since the last change of inputs
   bool milk_connected_ = false;        // scale link as last drawn
   uint32_t milk_seq_ = 0;              // scale seq as last drawn
@@ -384,6 +390,7 @@ class App {
                                    // (captured on the kBrewing edge; drives the
                                    // shot-aligned review repaint)
   bool stop_hint_seen_ = false;    // last stop_hint (flash the pill on the rise)
+  bool shot_near_played_ = false;  // "nearly there" sounded for this shot
   // Screensaver: dims the backlight after the configured idle time; any touch
   // restores it (LVGL's inactivity clock resets on input). Timer survives
   // rebuilds — it belongs to the app, not the widget tree.
@@ -487,6 +494,17 @@ class App {
   // it survives refreshes AND theme rebuilds — its whole job is remembering
   // that this warm-up has already been announced.
   core::ReadyChime ready_chime_;
+  core::SteamReadyChime steam_ready_;  // steam switched on later in a session
+  // Event sounds (core::CueGroup switches, cached from IDisplaySettings).
+  bool shot_sounds_on_ = true;
+  bool milk_sounds_on_ = true;
+  bool alert_sounds_on_ = true;
+  // play_cue: through the cue's group switch, at the chime volume (0 = all of
+  // them silent), `scale_pct` of it for the small ticks.
+  void play_cue(core::Cue cue, int scale_pct = 100);
+  void link_sounds_poll();             // refresh: scale/machine link edges
+  bool scale_link_known_ = false, scale_link_was_ = false;
+  bool machine_link_known_ = false, machine_link_was_ = false;
 
   // Shot-history view state. shot_view_ backs the open shot-card modal (the
   // card's graph paints from it on every redraw, so it must outlive the

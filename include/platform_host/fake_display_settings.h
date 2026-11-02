@@ -47,6 +47,12 @@ class FakeDisplaySettings : public core::IDisplaySettings {
   void set_milk_ml(int drink, int ml) override {
     if (drink >= 0 && drink < 10) milk_ml_[drink] = ml;
   }
+  bool shot_sounds() const override { return shot_sounds_; }
+  void set_shot_sounds(bool on) override { shot_sounds_ = on; }
+  bool milk_sounds() const override { return milk_sounds_; }
+  void set_milk_sounds(bool on) override { milk_sounds_ = on; }
+  bool alert_sounds() const override { return alert_sounds_; }
+  void set_alert_sounds(bool on) override { alert_sounds_ = on; }
 
  private:
   int brightness_ = 80;
@@ -65,6 +71,9 @@ class FakeDisplaySettings : public core::IDisplaySettings {
   int milk_drink_ = -1;          // never picked: Latte, whole milk, presets
   int milk_type_ = -1;
   int milk_ml_[10] = {};
+  bool shot_sounds_ = true;  // event sounds: on, like the device
+  bool milk_sounds_ = true;
+  bool alert_sounds_ = true;
 };
 
 }  // namespace host

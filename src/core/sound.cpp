@@ -1,5 +1,7 @@
 #include "core/sound.h"
 
+#include <cstddef>
+
 // The sound design, in one place. Everything here is note data — no platform,
 // no synthesis. Boards render it; the sim ignores it.
 
@@ -27,10 +29,35 @@ constexpr float kD6 = 1174.66f;
 constexpr float kEb6 = 1244.51f;
 constexpr float kE6 = 1318.51f;
 constexpr float kGb6 = 1479.98f;
+constexpr float kD5 = 587.33f;
+constexpr float kGs6 = 1661.22f;
+constexpr float kA6 = 1760.00f;
 
 // Button tick: a single high, very short blip. Not a pitch you hear as a note
 // — at 14 ms it reads as a mechanical click, which is the point.
 constexpr Tone kButtonPress[] = {{1900.0f, 14}};
+
+// Event cues (2026-11-02). Short, all on the bell, all at A5 and up where the
+// small speaker has output (lower "warnings" still carry through the bell's
+// overtones). A shape per meaning, so they're told apart without looking:
+// rising = something began or arrived, falling = something ended or left,
+// repeated = pay attention.
+constexpr Tone kShotStart[] = {{kA5, 80}, {kE6, 160}};
+constexpr Tone kShotNear[] = {{kE6, 110}, {0, 50}, {kE6, 110}};
+constexpr Tone kShotDone[] = {{kE6, 120}, {kB5, 120}, {kE5, 420}};
+constexpr Tone kMilkClose[] = {{kB5, 70}};
+constexpr Tone kMilkOnTarget[] = {{kA5, 100}, {kE6, 380}};
+constexpr Tone kMilkOver[] = {{kE5, 150}, {0, 60}, {kE5, 150}};
+constexpr Tone kSteamReady[] = {{kB5, 160}, {kE6, 160}, {kGs6, 520}};
+constexpr Tone kScaleConnected[] = {{kE6, 70}, {kA6, 120}};
+constexpr Tone kScaleDisconnected[] = {{kE6, 70}, {kA5, 120}};
+constexpr Tone kScaleBatteryLow[] = {{kE6, 120}, {kCs6, 120}, {kA5, 260}};
+constexpr Tone kMachineLost[] = {{kA5, 160}, {kF5, 160}, {kD5, 420}};
+constexpr Tone kBackflushDone[] = {{kE5, 140}, {kA5, 140}, {kE6, 140}, {kA6, 460}};
+constexpr Tone kCleanLockEnding[] = {{kB5, 60}};
+
+template <std::size_t N>
+constexpr int count_of(const Tone (&)[N]) { return static_cast<int>(N); }
 
 // "Blue": the "Buddy Holly" (Weezer) intro riff, as played at the 17th-19th
 // fret on the high E and B strings. The guitar's whole-step bend-and-release
@@ -145,6 +172,24 @@ const Tone* cue_notes(Cue cue, int& count) {
     case Cue::Ready:
       count = kReadyMelodies[0].count;
       return kReadyMelodies[0].notes;
+#define CUE_NOTES(c, t) \
+  case Cue::c:          \
+    count = count_of(t); \
+    return t;
+    CUE_NOTES(ShotStart, kShotStart)
+    CUE_NOTES(ShotNear, kShotNear)
+    CUE_NOTES(ShotDone, kShotDone)
+    CUE_NOTES(MilkClose, kMilkClose)
+    CUE_NOTES(MilkOnTarget, kMilkOnTarget)
+    CUE_NOTES(MilkOver, kMilkOver)
+    CUE_NOTES(SteamReady, kSteamReady)
+    CUE_NOTES(ScaleConnected, kScaleConnected)
+    CUE_NOTES(ScaleDisconnected, kScaleDisconnected)
+    CUE_NOTES(ScaleBatteryLow, kScaleBatteryLow)
+    CUE_NOTES(MachineLost, kMachineLost)
+    CUE_NOTES(BackflushDone, kBackflushDone)
+    CUE_NOTES(CleanLockEnding, kCleanLockEnding)
+#undef CUE_NOTES
     case Cue::ButtonPress:
     default:
       count = static_cast<int>(sizeof(kButtonPress) / sizeof(kButtonPress[0]));
@@ -171,10 +216,29 @@ Playback cue_sample(Cue cue, int volume) {
 }
 
 Timbre cue_timbre(Cue cue) {
+  // Everything but the button tick rings: the events are heard from the
+  // cup or the pitcher, not from under a finger.
+  return cue == Cue::ButtonPress ? Timbre::Click : Timbre::Bell;
+}
+
+CueGroup cue_group(Cue cue) {
   switch (cue) {
-    case Cue::Ready:        return Timbre::Bell;
+    case Cue::ShotStart:
+    case Cue::ShotNear:
+    case Cue::ShotDone:          return CueGroup::kShot;
+    case Cue::MilkClose:
+    case Cue::MilkOnTarget:
+    case Cue::MilkOver:          return CueGroup::kMilk;
+    case Cue::SteamReady:
+    case Cue::ScaleConnected:
+    case Cue::ScaleDisconnected:
+    case Cue::ScaleBatteryLow:
+    case Cue::MachineLost:
+    case Cue::BackflushDone:
+    case Cue::CleanLockEnding:   return CueGroup::kAlert;
     case Cue::ButtonPress:
-    default:                return Timbre::Click;
+    case Cue::Ready:
+    default:                     return CueGroup::kNone;
   }
 }
 
@@ -184,6 +248,21 @@ int cue_priority(Cue cue) {
     // must not cut it short. It, in turn, may interrupt a tick (inaudible —
     // the tick is over in 14 ms).
     case Cue::Ready:        return 10;
+    // The events: what you'd least want to miss cuts through the rest (a
+    // shot's end over its start, the milk's target over the "close" tick).
+    case Cue::SteamReady:
+    case Cue::BackflushDone:     return 9;
+    case Cue::ShotDone:
+    case Cue::MilkOnTarget:
+    case Cue::MilkOver:
+    case Cue::MachineLost:       return 8;
+    case Cue::ShotNear:          return 7;
+    case Cue::ShotStart:         return 6;
+    case Cue::ScaleBatteryLow:   return 5;
+    case Cue::ScaleConnected:
+    case Cue::ScaleDisconnected: return 4;
+    case Cue::CleanLockEnding:   return 3;
+    case Cue::MilkClose:         return 2;
     case Cue::ButtonPress:  return 0;
     default:                return 0;
   }

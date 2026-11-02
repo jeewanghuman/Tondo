@@ -49,6 +49,12 @@ class DisplaySettings : public core::IDisplaySettings {
   void set_milk_type(int index) override;
   int milk_ml(int drink) const override;
   void set_milk_ml(int drink, int ml) override;
+  bool shot_sounds() const override;
+  void set_shot_sounds(bool on) override;
+  bool milk_sounds() const override;
+  void set_milk_sounds(bool on) override;
+  bool alert_sounds() const override;
+  void set_alert_sounds(bool on) override;
 
  private:
   Display& display_;

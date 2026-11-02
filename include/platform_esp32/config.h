@@ -120,6 +120,13 @@ class Config {
   void set_milk_type(int index);
   int milk_ml(int drink) const;
   void set_milk_ml(int drink, int ml);
+  // Event-sound switches (default on; IDisplaySettings::shot_sounds()).
+  bool shot_sounds() const;
+  void set_shot_sounds(bool on);
+  bool milk_sounds() const;
+  void set_milk_sounds(bool on);
+  bool alert_sounds() const;
+  void set_alert_sounds(bool on);
 
   // WiFi station (home network join + NTP time sync). Credentials are entered via
   // the setup portal; timezone/NTP server via Settings.

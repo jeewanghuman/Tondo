@@ -232,6 +232,9 @@ struct SettingsWidgets {
   lv_obj_t* beta_row = nullptr;             // "Beta updates" (hidden if cadence Off)
   lv_obj_t* beta_switch = nullptr;
   lv_obj_t* click_sound_switch = nullptr;  // Device > Sound: button-press click
+  lv_obj_t* shot_sounds_switch = nullptr;  // Device > Sound: event sounds, one
+  lv_obj_t* milk_sounds_switch = nullptr;  // switch per core::CueGroup
+  lv_obj_t* alert_sounds_switch = nullptr;
 
   // Device > Backup (storage-capable boards only; nullptr elsewhere). Settings
   // travel to replacement hardware on the same card the shot history is on.

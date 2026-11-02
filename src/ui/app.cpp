@@ -523,6 +523,21 @@ void on_click_sound_switch(lv_event_t* e) {
   auto* sw = static_cast<lv_obj_t*>(lv_event_get_target(e));
   app->set_click_sound(lv_obj_has_state(sw, LV_STATE_CHECKED));
 }
+void on_shot_sounds_switch(lv_event_t* e) {
+  auto* sw = static_cast<lv_obj_t*>(lv_event_get_target(e));
+  static_cast<ui::App*>(lv_event_get_user_data(e))
+      ->set_shot_sounds(lv_obj_has_state(sw, LV_STATE_CHECKED));
+}
+void on_milk_sounds_switch(lv_event_t* e) {
+  auto* sw = static_cast<lv_obj_t*>(lv_event_get_target(e));
+  static_cast<ui::App*>(lv_event_get_user_data(e))
+      ->set_milk_sounds(lv_obj_has_state(sw, LV_STATE_CHECKED));
+}
+void on_alert_sounds_switch(lv_event_t* e) {
+  auto* sw = static_cast<lv_obj_t*>(lv_event_get_target(e));
+  static_cast<ui::App*>(lv_event_get_user_data(e))
+      ->set_alert_sounds(lv_obj_has_state(sw, LV_STATE_CHECKED));
+}
 void on_chime_vol_minus(lv_event_t* e) {
   static_cast<ui::App*>(lv_event_get_user_data(e))->ready_chime_vol_adjust(-1);
 }
@@ -992,6 +1007,9 @@ void App::build(core::IMachine& machine, core::IProvisioner& provisioner,
   // Button-press click on audio boards. The hook is read at event time and
   // checks the cached setting, so the switch takes effect immediately.
   click_sound_on_ = display_->click_sound();
+  shot_sounds_on_ = display_->shot_sounds();
+  milk_sounds_on_ = display_->milk_sounds();
+  alert_sounds_on_ = display_->alert_sounds();
   ready_chime_vol_ = display_->ready_chime_volume();
   ready_chime_mel_ = display_->ready_chime_melody();
   if (sound_->available()) {
@@ -1381,6 +1399,22 @@ void App::build(core::IMachine& machine, core::IProvisioner& provisioner,
     lv_obj_add_event_cb(settings_.click_sound_switch, on_click_sound_switch,
                         LV_EVENT_VALUE_CHANGED, this);
   }
+  {
+    const struct {
+      lv_obj_t* sw;
+      bool on;
+      lv_event_cb_t cb;
+    } kEventSwitches[] = {
+        {settings_.shot_sounds_switch, shot_sounds_on_, on_shot_sounds_switch},
+        {settings_.milk_sounds_switch, milk_sounds_on_, on_milk_sounds_switch},
+        {settings_.alert_sounds_switch, alert_sounds_on_, on_alert_sounds_switch},
+    };
+    for (const auto& s : kEventSwitches) {
+      if (s.sw == nullptr) continue;  // audio boards only
+      if (s.on) lv_obj_add_state(s.sw, LV_STATE_CHECKED);
+      lv_obj_add_event_cb(s.sw, s.cb, LV_EVENT_VALUE_CHANGED, this);
+    }
+  }
   if (settings_.chime_mel_btn != nullptr) {  // audio boards only
     set_chime_mel_label(settings_, ready_chime_mel_);
     lv_obj_add_event_cb(settings_.chime_mel_btn, on_chime_mel_clicked,
@@ -1528,6 +1562,7 @@ void App::update_heating(const core::MachineSnapshot& state) {
   // already-warm machine stays silent instead of firing a warm-up that
   // finished an hour ago.
   const bool ready = ready_chime_.update(state, heating_);
+  if (steam_ready_.update(state, heating_, ready)) play_cue(core::Cue::SteamReady);
   if (ready && ready_chime_vol_ > 0 && ready_chime_mel_ > 0 && sound_ != nullptr)
     sound_->play(core::ready_melody_playback(melody_variant(ready_chime_mel_),
                                              ready_chime_vol_));
@@ -1600,6 +1635,7 @@ void App::refresh() {
   update_result_poll();  // surface a finished update check (notice / "up to date")
   backup_result_poll();  // ...and a finished settings backup/restore
   scale_battery_poll();  // ...and a scale battery that has run low
+  link_sounds_poll();    // ...and the scale or the machine coming and going
   milk_poll();           // the Milk sheet closes itself on a shot or when left
   // Round glass: keep rows built after the tab (scan results, history list,
   // modal content) glassy. Last, so rows this tick's updates just added are
@@ -1829,6 +1865,56 @@ void App::set_scope_graph(bool on) {
 void App::set_click_sound(bool on) {
   click_sound_on_ = on;
   if (display_ != nullptr) display_->set_click_sound(on);  // persist
+}
+
+// The event-sound switches. Turning one on plays a sound from its group, so
+// the level (the chime volume) is judged by ear as you choose.
+void App::set_shot_sounds(bool on) {
+  shot_sounds_on_ = on;
+  if (display_ != nullptr) display_->set_shot_sounds(on);
+  if (on) play_cue(core::Cue::ShotDone);
+}
+
+void App::set_milk_sounds(bool on) {
+  milk_sounds_on_ = on;
+  if (display_ != nullptr) display_->set_milk_sounds(on);
+  if (on) play_cue(core::Cue::MilkOnTarget);
+}
+
+void App::set_alert_sounds(bool on) {
+  alert_sounds_on_ = on;
+  if (display_ != nullptr) display_->set_alert_sounds(on);
+  if (on) play_cue(core::Cue::SteamReady);
+}
+
+void App::play_cue(core::Cue cue, int scale_pct) {
+  if (sound_ == nullptr || !sound_->available()) return;
+  switch (core::cue_group(cue)) {
+    case core::CueGroup::kShot:  if (!shot_sounds_on_) return; break;
+    case core::CueGroup::kMilk:  if (!milk_sounds_on_) return; break;
+    case core::CueGroup::kAlert: if (!alert_sounds_on_) return; break;
+    case core::CueGroup::kNone:  break;
+  }
+  const int vol = ready_chime_vol_ * scale_pct / 100;
+  if (vol > 0) sound_->play(cue, vol);
+}
+
+// Link edges, heard: the scale coming and going, and the machine's link
+// dropping. The first look only learns the state (a boot is not an event).
+void App::link_sounds_poll() {
+  if (scale_ != nullptr) {
+    const bool up = scale_->snapshot().connected;
+    if (scale_link_known_ && up != scale_link_was_)
+      play_cue(up ? core::Cue::ScaleConnected : core::Cue::ScaleDisconnected);
+    scale_link_was_ = up;
+    scale_link_known_ = true;
+  }
+  if (machine_ != nullptr) {
+    const bool up = machine_->snapshot().link == core::Link::Connected;
+    if (machine_link_known_ && machine_link_was_ && !up) play_cue(core::Cue::MachineLost);
+    machine_link_was_ = up;
+    machine_link_known_ = true;
+  }
 }
 
 void App::cycle_ready_melody() {
@@ -2986,6 +3072,7 @@ void App::scale_battery_poll() {
   std::snprintf(msg, sizeof(msg), "Scale battery low (%d%%). Charge it soon.",
                 s.battery_pct);
   show_toast(msg);
+  play_cue(core::Cue::ScaleBatteryLow);
 }
 
 void App::dismiss_toast() {
@@ -3071,11 +3158,17 @@ void App::pump_scale_chart() {
     }
     // Unwired stop-early signal: fire the pill flash once per shot, on the
     // controller's latch going high (see BrewSnapshot::stop_hint).
-    if (bsnap.stop_hint && !stop_hint_seen_) ui::flash_stop_hint(home_);
+    if (bsnap.stop_hint && !stop_hint_seen_) {
+      ui::flash_stop_hint(home_);
+      if (!shot_near_played_) play_cue(core::Cue::ShotNear);  // "flip it now"
+      shot_near_played_ = true;
+    }
     stop_hint_seen_ = bsnap.stop_hint;
     const bool entering_brew =
         bsnap.phase == core::ShotPhase::kBrewing && shot_phase_ != core::ShotPhase::kBrewing;
     if (entering_brew) {
+      play_cue(core::Cue::ShotStart);
+      shot_near_played_ = false;
       if (bsnap.paddle_wired) {
         ui::begin_shot_plot(home_);  // dynamic-X plot owns the canvas for the shot
         // A tare was sent only if the baseline isn't already confirmed (the scale
@@ -3138,6 +3231,10 @@ void App::pump_scale_chart() {
     // pulses the moment the phase leaves kBrewing.
     if (shot_phase_ == core::ShotPhase::kBrewing &&
         bsnap.phase != core::ShotPhase::kBrewing) {
+      // A real end settles into review; a sub-minimum run (a rinse) drops
+      // straight back to idle and isn't announced.
+      if (bsnap.phase == core::ShotPhase::kSettling || bsnap.phase == core::ShotPhase::kReview)
+        play_cue(core::Cue::ShotDone);
       ui::cancel_stop_flash(home_);
       // An aborted unwired shot flips the readout back from net to raw; the
       // sentinel forces that repaint even if the reading hasn't moved. (A
@@ -3203,6 +3300,15 @@ void App::pump_scale_chart() {
     // Round glass: the shot ring follows the weight at the same rate.
     if (have_brew && snap.connected && bsnap.phase != core::ShotPhase::kIdle)
       ui::round_shot_progress(home_, shown, bsnap.target_weight_g);
+    // "Nearly there", a few grams out (10 %, at least 3 g). Shot detect has
+    // its own moment for it -- the stop hint, above -- so only the others.
+    const float target = bsnap.target_weight_g;
+    if (have_brew && snap.connected && !shot_near_played_ &&
+        bsnap.phase == core::ShotPhase::kBrewing && bsnap.mode != core::ShotMode::kDetect &&
+        target > 0.0f && shown >= target - (target * 0.1f > 3.0f ? target * 0.1f : 3.0f)) {
+      shot_near_played_ = true;
+      play_cue(core::Cue::ShotNear);
+    }
   }
 
   // Shot timer: continuous (ms) value, so redraw on a fixed ~10 Hz cadence that
@@ -3445,6 +3551,7 @@ void App::clean_lock_tick() {
   const int remaining = kCleanLockSecs - static_cast<int>(elapsed_ms / 1000u);
   if (remaining != clean_lock_shown_s_) {
     clean_lock_shown_s_ = remaining;
+    if (remaining <= 3) play_cue(core::Cue::CleanLockEnding, 70);  // 3, 2, 1
     lv_label_set_text_fmt(clean_lock_count_, "%d", remaining);
   }
 }
@@ -3592,8 +3699,10 @@ void App::backflush_tick() {
   // The sequence ending on its own while we're showing "running" is either
   // completion or a takeover (a paddle flip, or the harness setting going off
   // mid-run) — the two deserve different words.
-  if (bf_state_ == kBackflushRunning && !b.backflush_active)
+  if (bf_state_ == kBackflushRunning && !b.backflush_active) {
     bf_state_ = b.backflush_done ? kBackflushDone : kBackflushAborted;
+    if (bf_state_ == kBackflushDone) play_cue(core::Cue::BackflushDone);
+  }
 
   char cycle[32] = "";
   char phase[40] = "";
@@ -5429,6 +5538,7 @@ void App::milk_refresh_labels() {
                 static_cast<double>(core::kMilkTypes[milk_type_].g_per_ml));
   lv_label_set_text(milk_target_, t);
   milk_seen_ = false;  // the target moved: redraw the ring and status
+  milk_close_played_ = milk_target_played_ = milk_over_played_ = false;
   milk_tick();
 }
 
@@ -5474,6 +5584,20 @@ void App::milk_tick() {
   }
   ui::set_text(milk_weight_, wt);
   ui::set_text(milk_status_, st);
+  // Heard as well as seen, once each per pour: a tick into the last fifth,
+  // the target, and a warning past it.
+  if (milk_tared_ && s.connected) {
+    if (tone == 0 && permille >= 800 && !milk_close_played_) {
+      milk_close_played_ = true;
+      play_cue(core::Cue::MilkClose, 70);
+    } else if (tone == 1 && !milk_target_played_) {
+      milk_close_played_ = milk_target_played_ = true;
+      play_cue(core::Cue::MilkOnTarget);
+    } else if (tone == 2 && !milk_over_played_) {
+      milk_close_played_ = milk_target_played_ = milk_over_played_ = true;
+      play_cue(core::Cue::MilkOver);
+    }
+  }
   if (lv_arc_get_value(milk_arc_) != permille) lv_arc_set_value(milk_arc_, permille);
   if (tone != milk_tone_) {  // a style write redraws the whole ring: only on change
     milk_tone_ = tone;
@@ -5603,6 +5727,7 @@ void App::milk_tare() {
   milk_moved_ms_ = lv_tick_get();
   scale_->tare();
   milk_tared_ = true;
+  milk_close_played_ = milk_target_played_ = milk_over_played_ = false;
   milk_seen_ = false;  // the status changes now; the weight follows the scale
   milk_tick();
 }

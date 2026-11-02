@@ -216,6 +216,27 @@ offsets after it move). Sim: `round_milk_800x800` / `round_milk_done_800x800`
 `round_milk_types_800x800` (4 / 5 = with a list open), manual shots
 `home-milk.png`, `home-milk-list.png`.
 
+## Event sounds (2026-11-02)
+
+Thirteen cues beyond the click and the warm-up chime, in three groups with
+one Settings > Tondo > Sound switch each (`core::cue_group`: kShot / kMilk /
+kAlert; NVS `sndshot`/`sndmilk`/`sndalert`, bools, default on). All play at
+the CHIME volume through `App::play_cue` (group switch, then volume; 0 =
+silent), on the bell, at A5 and up (the small speaker's range). Shapes carry
+meaning: rising = began/arrived, falling = ended/left, repeated = attention.
+Priorities in `cue_priority` (end > start, target > close tick). Hooks:
+ShotStart/Done on the kBrewing edges in pump_scale_chart (a sub-minimum run
+falling back to kIdle is silent); ShotNear on the stop_hint rise in kDetect,
+else at target - max(10 %, 3 g) of the shown grams, once per shot; milk
+close (80 %) / on target / over once per pour (reset by Tare or a new
+target) in milk_tick; SteamReady from `core::SteamReadyChime`
+(ready_chime.h: only a mid-session steam off->on edge, only if the boiler
+was seen >= 6 C low, never on a dip, never with ReadyChime's own chime --
+host-tested); scale/machine link edges in `link_sounds_poll` (first look only
+learns the state); battery low with its toast; BackflushDone on the
+kBackflushDone transition; CleanLockEnding at 3, 2, 1. Costs: note tables
+in flash, three LVGL rows on the Sound page; no buffers, tasks or timers.
+
 ## Failed-allocation flight recorder (crash_record.*, 2026-09-12)
 
 Core dumps here hold task stacks only (CONFIG_ESP_COREDUMP_CAPTURE_DRAM is off
